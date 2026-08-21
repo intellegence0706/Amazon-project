@@ -1,0 +1,139 @@
+"""Demo surface. Every command here is something you can show on a screen share."""
+import argparse
+import csv
+import sys
+
+from . import db, ingest
+from .economics import evaluate
+from .fingerprint import TIERS, scan
+
+
+def cmd_fingerprint(a):
+    print(f"{'HOST':<26} {'TIER':<6} {'PLATFORM':<14} NOTE")
+    print("-" * 88)
+    for fp in scan(a.hosts):
+        print(fp)
+    print("\n" + "\n".join(f"  tier {k}: {v}" for k, v in TIERS.items()))
+
+
+def cmd_add(a):
+    conn = db.init()
+    r = ingest.register(conn, a.slug, a.name or a.slug, a.host, a.platform, a.tier)
+    print(f"registered #{r['id']} {r['slug']} ({r['platform']}, tier {r['tier']})")
+
+
+def cmd_ingest(a):
+    conn = db.init()
+    s = ingest.ingest(conn, a.slug, max_pages=a.pages)
+    print(f"{a.slug}: {s['seen']} variants  {s['new']} new  "
+          f"{s['price_changes']} price changes  {s['on_sale']} on sale")
+
+
+def cmd_sales(a):
+    conn = db.init()
+    rows = conn.execute(
+        """SELECT r.name AS retailer, p.title, p.brand, p.pack_qty, p.url,
+                  s.price, s.list_price,
+                  ROUND((s.list_price - s.price) / s.list_price * 100, 1) AS disc
+             FROM products p
+             JOIN retailers r ON r.id = p.retailer_id
+             JOIN price_snapshots s ON s.id = (
+                  SELECT id FROM price_snapshots
+                   WHERE product_id = p.id ORDER BY captured_at DESC LIMIT 1)
+            WHERE s.list_price IS NOT NULL
+              AND s.list_price > s.price
+              AND s.price >= 0.50
+              AND s.in_stock = 1
+              AND ((s.list_price - s.price) / s.list_price * 100) >= ?
+            ORDER BY disc DESC LIMIT ?""",
+        (a.min_discount, a.limit),
+    ).fetchall()
+
+    if a.csv:
+        w = csv.writer(sys.stdout)
+        w.writerow(["retailer", "brand", "title", "pack_qty", "price", "was", "discount_pct", "url"])
+        for x in rows:
+            w.writerow([x["retailer"], x["brand"], x["title"], x["pack_qty"],
+                        x["price"], x["list_price"], x["disc"], x["url"]])
+        return
+
+    print(f"{'DISC':>6}  {'NOW':>8}  {'WAS':>8}  {'PACK':>5}  BRAND / PRODUCT")
+    print("-" * 96)
+    for x in rows:
+        pack = x["pack_qty"] if x["pack_qty"] else "-"
+        print(f"{x['disc']:>5.0f}%  ${x['price']:>7.2f}  ${x['list_price']:>7.2f}  "
+              f"{str(pack):>5}  {(x['brand'] or '?')[:18]:<18} {x['title'][:44]}")
+    print(f"\n{len(rows)} discounted products in stock")
+
+
+def cmd_leads(a):
+    """Model ROI against a hypothetical Amazon price.
+
+    Real Amazon prices arrive with a Keepa key; --multiplier exists so the whole
+    pipeline is demonstrable before that key is purchased.
+    """
+    conn = db.init()
+    rows = conn.execute(
+        """SELECT p.title, p.brand, p.grams, s.price, s.list_price
+             FROM products p
+             JOIN price_snapshots s ON s.id = (
+                  SELECT id FROM price_snapshots
+                   WHERE product_id = p.id ORDER BY captured_at DESC LIMIT 1)
+            WHERE s.in_stock = 1 AND s.list_price > s.price
+            ORDER BY (s.list_price - s.price) / s.list_price DESC LIMIT ?""",
+        (a.limit,),
+    ).fetchall()
+
+    print(f"{'ROI':>7} {'NET':>8} {'COST':>8} {'AMZ':>8}  PRODUCT")
+    print("-" * 96)
+    kept = 0
+    for x in rows:
+        weight = (x["grams"] or 454) / 453.6
+        amz = round(x["list_price"] * a.multiplier, 2)
+        lead = evaluate(cost=x["price"], sale_price=amz, weight_lb=weight,
+                        min_roi=a.min_roi)
+        if lead.roi_pct < a.min_roi:
+            continue
+        kept += 1
+        print(f"{lead.roi_pct:>6.1f}% ${lead.net_profit:>7.2f} ${lead.cost:>7.2f} "
+              f"${amz:>7.2f}  {(x['brand'] or '?')[:16]:<16} {x['title'][:40]}")
+    print(f"\n{kept} leads at or above {a.min_roi}% ROI")
+    print("NOTE: Amazon price modelled at list x %.2f - replace with Keepa data." % a.multiplier)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="arbitrage")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("fingerprint", help="sort domains into acquisition tiers")
+    p.add_argument("hosts", nargs="+")
+    p.set_defaults(fn=cmd_fingerprint)
+
+    p = sub.add_parser("add", help="register a retailer")
+    p.add_argument("slug"); p.add_argument("host")
+    p.add_argument("--name"); p.add_argument("--platform", default="shopify")
+    p.add_argument("--tier", type=int, default=1)
+    p.set_defaults(fn=cmd_add)
+
+    p = sub.add_parser("ingest", help="pull catalog + record price changes")
+    p.add_argument("slug"); p.add_argument("--pages", type=int, default=None)
+    p.set_defaults(fn=cmd_ingest)
+
+    p = sub.add_parser("sales", help="products currently discounted")
+    p.add_argument("--min-discount", type=float, default=20.0)
+    p.add_argument("--limit", type=int, default=40)
+    p.add_argument("--csv", action="store_true")
+    p.set_defaults(fn=cmd_sales)
+
+    p = sub.add_parser("leads", help="model profit / ROI")
+    p.add_argument("--min-roi", type=float, default=30.0)
+    p.add_argument("--multiplier", type=float, default=1.0)
+    p.add_argument("--limit", type=int, default=60)
+    p.set_defaults(fn=cmd_leads)
+
+    a = ap.parse_args(argv)
+    return a.fn(a)
+
+
+if __name__ == "__main__":
+    main()
