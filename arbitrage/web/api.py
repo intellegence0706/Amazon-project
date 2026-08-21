@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import db, ingest, queries
+from .. import db, ingest, queries, verify as _verify
 from ..fingerprint import TIERS, probe
 
 app = FastAPI(
@@ -244,3 +244,35 @@ def fingerprint(host: str = Query(..., description="Domain, e.g. www.vitacost.co
     """Sort a domain into an acquisition tier before committing to it."""
     fp = probe(host)
     return {**fp.__dict__, "tier_meaning": TIERS[fp.tier]}
+
+
+class CheckResult(BaseModel):
+    name: str
+    status: str
+    detail: str = ""
+    fix: str = ""
+
+
+class Verification(BaseModel):
+    ok: bool
+    summary: str
+    checks: List[CheckResult]
+
+
+@app.get("/verify", response_model=Verification, tags=["meta"])
+def verify_pipeline(offline: bool = Query(False, description="Skip network checks")):
+    """Self-test every stage: config, database, retailer fetch, Keepa, fees, ROI.
+
+    Run this after adding a Keepa key. It reports which stage failed and how to
+    fix it, so 'does it work' has an answer rather than an opinion.
+    """
+    checks = _verify.run(live_network=not offline)
+    failed = [c for c in checks if c.status == _verify.FAIL]
+    return Verification(
+        ok=not failed,
+        summary=("pipeline broken" if failed else
+                 "operational" if not any(c.status == _verify.WARN for c in checks)
+                 else "works, with warnings"),
+        checks=[CheckResult(name=c.name, status=c.status, detail=c.detail, fix=c.fix)
+                for c in checks],
+    )

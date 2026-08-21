@@ -3,7 +3,7 @@ import argparse
 import csv
 import sys
 
-from . import db, ingest
+from . import db, ingest, verify as _verify
 from .economics import evaluate
 from .fingerprint import TIERS, scan
 
@@ -101,6 +101,12 @@ def cmd_leads(a):
     print("NOTE: Amazon price modelled at list x %.2f - replace with Keepa data." % a.multiplier)
 
 
+def cmd_verify(a):
+    checks = _verify.run(live_network=not a.offline)
+    print(_verify.report(checks))
+    return 1 if any(c.status == _verify.FAIL for c in checks) else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="arbitrage")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -130,6 +136,10 @@ def main(argv=None):
     p.add_argument("--multiplier", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=60)
     p.set_defaults(fn=cmd_leads)
+
+    p = sub.add_parser("verify", help="self-test the whole pipeline")
+    p.add_argument("--offline", action="store_true", help="skip network checks")
+    p.set_defaults(fn=cmd_verify)
 
     a = ap.parse_args(argv)
     return a.fn(a)

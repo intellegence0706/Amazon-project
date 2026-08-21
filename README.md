@@ -63,6 +63,20 @@ fee/ROI math, filtering, CSV export.
 **Not yet real:** Amazon-side data. `leads` currently models the Amazon price as
 `list_price × multiplier`. The ROI figures prove the *math*, not the *market*.
 
+## Setup
+
+```bash
+cp .env.example .env      # add your Keepa key
+python3 -m arbitrage.cli verify
+```
+
+`verify` self-tests every stage — config, database, retailer fetch, Keepa key,
+Amazon lookup, rank history, fees, ROI — and names the stage that failed plus how
+to fix it. Run it after adding a key. It also exists as `GET /verify`.
+
+Without a key it runs in **simulation mode** against a recorded Keepa response,
+so the full chain still executes and every ROI stays flagged `modelled: true`.
+
 ## The one blocker
 
 Real leads need a **Keepa API key (~€49/mo)** for ASIN matching, Buy Box price,
