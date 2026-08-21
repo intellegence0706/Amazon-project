@@ -19,7 +19,7 @@ python3 -m arbitrage.cli sales --min-discount 30 --csv > leads.csv
 
 ```bash
 pip install fastapi uvicorn
-python3 -m uvicorn arbitrage.web.api:app --port 8000
+./start.sh
 ```
 
 Interactive docs at `/docs`. Machine-readable spec at `/openapi.json` — hand that
@@ -98,10 +98,14 @@ matching engine, fee/ROI math, filtering, CSV export, REST API, self-verificatio
 ## Interface
 
 ```bash
-./start.sh          # engine + interface together
+./start.sh          # one process, opens the browser
 ```
 
-Then open **http://localhost:3000**. See [SETUP.md](SETUP.md).
+Opens at **http://localhost:8000**. See [SETUP.md](SETUP.md).
+
+The interface is a static Next.js export served by the Python API from the same
+origin — so there is one process, one port, no CORS, and **no Node needed at
+runtime**. The built bundle ships with the project.
 
 Next.js 16 / React 19 / TypeScript. The dashboard walks through key setup,
 verification, scanning and matching — every step is a button, so the whole

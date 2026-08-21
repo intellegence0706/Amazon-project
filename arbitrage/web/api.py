@@ -7,10 +7,12 @@ machine-readably.
 """
 import csv
 import io
+import pathlib
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -382,3 +384,40 @@ def set_keepa_key(body: KeepaKeyIn):
     lines.insert(0, f"KEEPA_API_KEY={key}")
     path.write_text("\n".join(lines) + "\n")
     return get_settings()
+
+
+# ---------------------------------------------------------------- interface
+#
+# Mounted LAST so every API route above wins the match. The built Next.js export
+# is served from the same origin, which means one process, one URL, and no Node
+# needed at runtime.
+
+_UI_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "web" / "out"
+
+if _UI_DIR.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    class _SPAFiles(StaticFiles):
+        """Serve exported pages, falling back to 404.html rather than a bare error."""
+
+        async def get_response(self, path: str, scope):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code == 404:
+                    for candidate in (f"{path}/index.html", f"{path}.html", "404.html"):
+                        try:
+                            return await super().get_response(candidate, scope)
+                        except StarletteHTTPException:
+                            continue
+                raise
+
+    app.mount("/", _SPAFiles(directory=str(_UI_DIR), html=True), name="ui")
+else:
+    @app.get("/", include_in_schema=False)
+    def _no_ui():
+        return {
+            "detail": "Interface not built.",
+            "fix": "cd web && npm install && npm run build",
+            "api_docs": "/docs",
+        }

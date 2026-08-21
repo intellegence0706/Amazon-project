@@ -2,8 +2,12 @@
  * Typed client for the Python sourcing engine.
  * Shapes mirror the FastAPI OpenAPI schema at /openapi.json.
  */
-export const API =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+/**
+ * Same-origin by default: the Python API serves this bundle, so relative paths
+ * work and there is nothing to configure. Override only when running the
+ * Next dev server separately.
+ */
+export const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export type Check = { name: string; status: "PASS" | "WARN" | "FAIL" | "SKIP"; detail: string; fix: string };
 export type Verification = { ok: boolean; summary: string; checks: Check[] };

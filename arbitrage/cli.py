@@ -1,6 +1,7 @@
 """Demo surface. Every command here is something you can show on a screen share."""
 import argparse
 import csv
+import pathlib
 import sys
 
 from . import config, db, ingest, matching, queries
@@ -103,6 +104,32 @@ def cmd_leads(a):
     print("NOTE: Amazon price modelled at list x %.2f - replace with Keepa data." % a.multiplier)
 
 
+def cmd_ui(a):
+    """Start the engine and open the interface. One command, one URL."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    url = f"http://127.0.0.1:{a.port}"
+    ui_built = (pathlib.Path(__file__).resolve().parent.parent / "web" / "out").is_dir()
+
+    print(f"\n  Sourcing Engine")
+    print(f"  {'─' * 44}")
+    print(f"   Interface   {url}")
+    print(f"   API docs    {url}/docs")
+    if not ui_built:
+        print("\n   Interface not built yet. Run:")
+        print("     cd web && npm install && npm run build")
+    print(f"  {'─' * 44}\n")
+
+    if ui_built and not a.no_browser:
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    uvicorn.run("arbitrage.web.api:app", host="127.0.0.1", port=a.port,
+                log_level="warning")
+
+
 def cmd_match(a):
     """Match discounted products to Amazon ASINs."""
     conn = db.init()
@@ -177,6 +204,11 @@ def main(argv=None):
     p.add_argument("--multiplier", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=60)
     p.set_defaults(fn=cmd_leads)
+
+    p = sub.add_parser("ui", help="start the engine and open the interface")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--no-browser", action="store_true")
+    p.set_defaults(fn=cmd_ui)
 
     p = sub.add_parser("match", help="match discounted products to Amazon ASINs")
     p.add_argument("--limit", type=int, default=25)
