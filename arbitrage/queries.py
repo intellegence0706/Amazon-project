@@ -163,3 +163,58 @@ def retailers(conn):
                COUNT(p.id) AS products
           FROM retailers r LEFT JOIN products p ON p.retailer_id = r.id
          GROUP BY r.id ORDER BY r.name""")]
+
+
+def matched_leads(conn, min_roi=30.0, min_profit=0.0, only_auto=True,
+                  limit=100, offset=0, settings=None):
+    """Leads built from REAL matched Amazon data. modelled=False.
+
+    Separate from leads() on purpose: nothing here is estimated, so these can be
+    presented as sourcing decisions rather than a demonstration of the maths.
+    """
+    from .config import load as load_settings
+    cfg = settings or load_settings()
+    status = "('auto','confirmed')" if only_auto else "('auto','confirmed','pending')"
+    rows = conn.execute(f"""
+        SELECT r.name AS retailer, r.slug AS retailer_slug, p.id AS product_id,
+               p.title, p.brand, p.url, p.pack_qty, p.grams,
+               s.price, s.list_price, s.captured_at,
+               ROUND((s.list_price - s.price) / s.list_price * 100, 1) AS discount_pct,
+               a.asin, a.buybox_price, a.offer_count, a.amazon_on_listing, a.bsr,
+               a.fba_fee, a.referral_pct, a.category, m.confidence, m.method
+          FROM matches m
+          JOIN products p ON p.id = m.product_id
+          JOIN retailers r ON r.id = p.retailer_id
+          JOIN amazon_products a ON a.asin = m.asin
+          JOIN price_snapshots s ON s.id = (
+               SELECT id FROM price_snapshots
+                WHERE product_id = p.id ORDER BY captured_at DESC LIMIT 1)
+         WHERE m.status IN {status} AND a.buybox_price IS NOT NULL
+           AND s.in_stock = 1
+         ORDER BY m.confidence DESC""").fetchall()
+
+    out = []
+    for x in rows:
+        override = None
+        if x["fba_fee"] is not None and x["referral_pct"] is not None:
+            override = {"fba": x["fba_fee"],
+                        "referral": round(x["buybox_price"] * x["referral_pct"], 2)}
+        ev = evaluate(cost=x["price"], sale_price=x["buybox_price"],
+                      weight_lb=(x["grams"] or 454) / 453.6,
+                      category=x["category"], bsr=x["bsr"],
+                      offer_count=x["offer_count"],
+                      amazon_on_listing=bool(x["amazon_on_listing"]),
+                      inbound=cfg.inbound_cost, prep=cfg.prep_cost,
+                      fee_override=override, max_bsr=cfg.max_bsr, min_roi=min_roi)
+        if ev.roi_pct < min_roi or ev.net_profit < min_profit:
+            continue
+        out.append(LeadRow(
+            retailer=x["retailer"], retailer_slug=x["retailer_slug"],
+            product_id=x["product_id"], title=x["title"], brand=x["brand"],
+            url=x["url"], pack_qty=x["pack_qty"], price=x["price"],
+            list_price=x["list_price"], discount_pct=x["discount_pct"],
+            captured_at=x["captured_at"], amazon_price=x["buybox_price"],
+            net_profit=ev.net_profit, roi_pct=ev.roi_pct, margin_pct=ev.margin_pct,
+            referral_fee=ev.referral_fee, fba_fee=ev.fba_fee,
+            flags=tuple(ev.flags), modelled=False))
+    return len(out), out[offset:offset + limit]

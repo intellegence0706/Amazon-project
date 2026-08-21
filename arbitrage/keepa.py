@@ -143,6 +143,15 @@ class KeepaClient:
         items = data.get("products") or []
         return parse_product(items[0]) if items else None
 
+    def search(self, term, stats_days=90) -> List[KeepaProduct]:
+        """Keyword search - candidate generation for fuzzy matching.
+
+        Costs more tokens than an ASIN lookup, so the funnel filters hard before
+        anything reaches here.
+        """
+        data = self._call("search", type="product", term=term, stats=stats_days)
+        return [parse_product(p) for p in (data.get("products") or [])]
+
     def by_upc(self, upc, stats_days=90) -> List[KeepaProduct]:
         """UPC/EAN lookup - the high-precision matching path."""
         data = self._call("product", code=str(upc).strip(), stats=stats_days, buybox=1)

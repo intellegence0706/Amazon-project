@@ -3,7 +3,9 @@ import argparse
 import csv
 import sys
 
-from . import db, ingest, verify as _verify
+from . import config, db, ingest, matching, queries
+from . import verify as _verify
+from .keepa import KeepaClient, fixture_client
 from .economics import evaluate
 from .fingerprint import TIERS, scan
 
@@ -101,6 +103,45 @@ def cmd_leads(a):
     print("NOTE: Amazon price modelled at list x %.2f - replace with Keepa data." % a.multiplier)
 
 
+def cmd_match(a):
+    """Match discounted products to Amazon ASINs."""
+    conn = db.init()
+    cfg = config.load()
+    if cfg.keepa_configured:
+        client = KeepaClient(cfg.keepa_api_key, cfg.keepa_domain)
+        print("using live Keepa API")
+    else:
+        client = fixture_client(cfg.keepa_domain)
+        print("NO KEEPA KEY — simulation mode, matches are not real\n")
+
+    def show(title, m):
+        mark = {"auto": "✓", "pending": "?", "rejected": "✗"}[m.status]
+        print(f"  {mark} {m.confidence:>5.2f} {m.method:<6} {title[:52]}")
+        if m.status == "rejected":
+            print(f"            └ {m.reasons[0]}")
+
+    st = matching.run(conn, client, limit=a.limit, min_discount=a.min_discount,
+                      progress=show)
+    print(f"\n  attempted {st['attempted']} · auto {st['auto']} · "
+          f"review {st['pending']} · rejected {st['rejected']} · "
+          f"no candidate {st['no_candidate']} · errors {st['errors']}")
+
+
+def cmd_real(a):
+    """Leads from real matched Amazon data."""
+    conn = db.init()
+    n, rows = queries.matched_leads(conn, min_roi=a.min_roi, limit=a.limit)
+    if not n:
+        print("No matched leads yet. Run: arbitrage match  (needs a Keepa key)")
+        return
+    print(f"{'ROI':>7} {'NET':>8} {'COST':>8} {'AMZ':>8} {'BSR':>9}  PRODUCT")
+    print("-" * 96)
+    for r in rows:
+        print(f"{r.roi_pct:>6.1f}% ${r.net_profit:>7.2f} ${r.price:>7.2f} "
+              f"${r.amazon_price:>7.2f} {'':>9}  {r.title[:40]}")
+    print(f"\n{n} verified leads (real Amazon data)")
+
+
 def cmd_verify(a):
     checks = _verify.run(live_network=not a.offline)
     print(_verify.report(checks))
@@ -136,6 +177,16 @@ def main(argv=None):
     p.add_argument("--multiplier", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=60)
     p.set_defaults(fn=cmd_leads)
+
+    p = sub.add_parser("match", help="match discounted products to Amazon ASINs")
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--min-discount", type=float, default=15.0)
+    p.set_defaults(fn=cmd_match)
+
+    p = sub.add_parser("real", help="leads from real matched Amazon data")
+    p.add_argument("--min-roi", type=float, default=30.0)
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(fn=cmd_real)
 
     p = sub.add_parser("verify", help="self-test the whole pipeline")
     p.add_argument("--offline", action="store_true", help="skip network checks")

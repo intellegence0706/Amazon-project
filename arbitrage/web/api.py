@@ -276,3 +276,46 @@ def verify_pipeline(offline: bool = Query(False, description="Skip network check
         checks=[CheckResult(name=c.name, status=c.status, detail=c.detail, fix=c.fix)
                 for c in checks],
     )
+
+
+class MatchStats(BaseModel):
+    attempted: int
+    auto: int
+    pending: int
+    rejected: int
+    no_candidate: int
+    errors: int
+    keepa_mode: str
+
+
+@app.get("/leads/verified", response_model=LeadPage, tags=["leads"])
+def verified_leads(min_roi: float = 30.0, min_profit: float = 0.0,
+                   include_pending: bool = False,
+                   limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0),
+                   conn=Depends(get_conn)):
+    """Leads built from REAL matched Amazon data — `modelled` is false.
+
+    Empty until `POST /match` has run with a Keepa key configured.
+    """
+    total, rows = queries.matched_leads(conn, min_roi=min_roi, min_profit=min_profit,
+                                        only_auto=not include_pending,
+                                        limit=limit, offset=offset)
+    return LeadPage(total=total, count=len(rows), offset=offset, modelled=False,
+                    note="Real Keepa data. Confidence-gated matches only.",
+                    items=[{**r.dict(), "flags": list(r.flags)} for r in rows])
+
+
+@app.post("/match", response_model=MatchStats, tags=["leads"])
+def run_match(limit: int = Query(25, ge=1, le=500), min_discount: float = 15.0,
+              conn=Depends(get_conn)):
+    """Match discounted products to Amazon ASINs.
+
+    Costs Keepa tokens. Only funnel survivors are attempted.
+    """
+    from .. import config, matching
+    from ..keepa import KeepaClient, fixture_client
+    cfg = config.load()
+    client = (KeepaClient(cfg.keepa_api_key, cfg.keepa_domain)
+              if cfg.keepa_configured else fixture_client(cfg.keepa_domain))
+    st = matching.run(conn, client, limit=limit, min_discount=min_discount)
+    return MatchStats(**st, keepa_mode=client.mode)

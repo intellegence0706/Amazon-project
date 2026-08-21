@@ -55,10 +55,42 @@ explicitly. No surface can silently present modelled ROI as verified.
 
 Adding a retailer already on a supported platform is one `add` command, not code.
 
+## Matching
+
+```bash
+python3 -m arbitrage.cli match --limit 25   # retailer product -> ASIN
+python3 -m arbitrage.cli real               # leads from REAL Amazon data
+```
+
+Two paths: exact GTIN lookup (near-certain), then keyword search with reranking.
+**Hard gates reject rather than score down** — a brand mismatch or a pack-size
+mismatch is a no, not a low number. Unknown pack size caps confidence *below*
+auto-accept, because unknown is not innocent: a 6-pack matched to a single unit
+produces a beautiful fake ROI and dead inventory.
+
+| Confidence | Status | Meaning |
+|---|---|---|
+| ≥ 0.90 | `auto` | Trusted, appears in verified leads |
+| 0.70–0.89 | `pending` | Needs a human glance |
+| < 0.70 | `rejected` | Discarded |
+
+`/leads` is modelled. `/leads/verified` is real matched data with `modelled: false`.
+The two never mix.
+
+## Tests
+
+```bash
+python3 tests/test_matching.py    # 24 checks, scoring gates and failure modes
+python3 tests/test_pipeline.py    # end-to-end against a mock Keepa
+```
+
+Scoring is pure and offline-testable on purpose — it ships to a machine whose
+Keepa key the author never had, so its failure modes are tested, not assumed.
+
 ## Status
 
 Working: fingerprinting, Shopify ingestion, price history, sale detection,
-fee/ROI math, filtering, CSV export.
+matching engine, fee/ROI math, filtering, CSV export, REST API, self-verification.
 
 **Not yet real:** Amazon-side data. `leads` currently models the Amazon price as
 `list_price × multiplier`. The ROI figures prove the *math*, not the *market*.
@@ -89,4 +121,5 @@ US rate card, and prefer Keepa's per-ASIN fees once a key exists.
 
 - Colourway variants produce near-duplicate leads — dedup on parent product
 - `pack_qty` parses supplement/grocery titles well, soft goods poorly
-- Matching engine (Stage 2) not started — blocked on Keepa
+- Most fuzzy matches land in `pending`, not `auto` — by design, since tier-1
+  retailers carry no UPCs. Expect a review queue until UPC-bearing feeds are added.
