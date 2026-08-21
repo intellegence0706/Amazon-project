@@ -10,6 +10,7 @@ import io
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,17 @@ app = FastAPI(
         "`modelled: true` until a Keepa API key is configured. Do not present "
         "modelled ROI as a verified sourcing decision."
     ),
+)
+
+
+# The UI runs as a separate Next.js process during development.
+# Bind the API to 127.0.0.1 in production - these origins are local only.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
 )
 
 
@@ -319,3 +331,54 @@ def run_match(limit: int = Query(25, ge=1, le=500), min_discount: float = 15.0,
               if cfg.keepa_configured else fixture_client(cfg.keepa_domain))
     st = matching.run(conn, client, limit=limit, min_discount=min_discount)
     return MatchStats(**st, keepa_mode=client.mode)
+
+
+class KeepaKeyIn(BaseModel):
+    api_key: str = Field(min_length=8, description="Keepa API key")
+
+
+class SettingsOut(BaseModel):
+    keepa_configured: bool
+    keepa_key_masked: Optional[str] = None
+    min_roi: float
+    max_bsr: int
+    inbound_cost: float
+    prep_cost: float
+
+
+@app.get("/settings", response_model=SettingsOut, tags=["meta"])
+def get_settings():
+    """Current configuration. The key is never returned in full."""
+    from .. import config
+    s = config.load()
+    return SettingsOut(
+        keepa_configured=s.keepa_configured,
+        keepa_key_masked=(s.keepa_api_key[:4] + "…" + s.keepa_api_key[-4:]
+                          if s.keepa_configured else None),
+        min_roi=s.min_roi, max_bsr=s.max_bsr,
+        inbound_cost=s.inbound_cost, prep_cost=s.prep_cost,
+    )
+
+
+@app.post("/settings/keepa-key", response_model=SettingsOut, tags=["meta"])
+def set_keepa_key(body: KeepaKeyIn):
+    """Save a Keepa key to .env, then validate it against Keepa.
+
+    Localhost-only convenience so a non-technical user never has to edit a file.
+    Rejects the key if Keepa does not accept it, rather than saving something broken.
+    """
+    from .. import config
+    from ..keepa import KeepaClient, KeepaError
+
+    key = body.api_key.strip()
+    try:
+        KeepaClient(key, config.load().keepa_domain).tokens()
+    except KeepaError as e:
+        raise HTTPException(400, f"Keepa rejected this key: {e}")
+
+    path = config.ENV_PATH
+    lines = path.read_text().splitlines() if path.exists() else []
+    lines = [l for l in lines if not l.strip().startswith("KEEPA_API_KEY")]
+    lines.insert(0, f"KEEPA_API_KEY={key}")
+    path.write_text("\n".join(lines) + "\n")
+    return get_settings()

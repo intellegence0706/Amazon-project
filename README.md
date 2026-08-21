@@ -95,6 +95,19 @@ matching engine, fee/ROI math, filtering, CSV export, REST API, self-verificatio
 **Not yet real:** Amazon-side data. `leads` currently models the Amazon price as
 `list_price × multiplier`. The ROI figures prove the *math*, not the *market*.
 
+## Interface
+
+```bash
+./start.sh          # engine + interface together
+```
+
+Then open **http://localhost:3000**. See [SETUP.md](SETUP.md).
+
+Next.js 16 / React 19 / TypeScript. The dashboard walks through key setup,
+verification, scanning and matching — every step is a button, so the whole
+pipeline is operable without a terminal. Leads switch between *Modelled* and
+*Verified*, and the two are never presented as the same thing.
+
 ## Setup
 
 ```bash

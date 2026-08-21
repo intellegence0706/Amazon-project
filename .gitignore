@@ -7,3 +7,6 @@ report.html
 .venv/
 node_modules/
 .env
+web/.next/
+web/node_modules/
+web/out/
