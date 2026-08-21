@@ -41,8 +41,12 @@ python3 -m arbitrage.cli ingest vitacost         # local, unlimited time
 
 export DATABASE_URL='postgresql://postgres.[REF]:[PW]@aws-0-[REGION].pooler.supabase.com:6543/postgres'
 python3 -m arbitrage.cli migrate
-python3 -m arbitrage.cli verify --offline        # confirm before deploying
+python3 -m arbitrage.cli preflight               # checks all 8 prerequisites
 ```
+
+`preflight` verifies the connection string, that you are on the pooler, that
+Supabase is reachable and not paused, that data uploaded, that the frontend is
+built, and that the deployment files exist. It prints the fix for anything wrong.
 
 `migrate` copies retailers, products, price history, Amazon products and matches,
 remapping foreign keys as Postgres assigns new IDs. It is idempotent.

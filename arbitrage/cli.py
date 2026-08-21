@@ -104,6 +104,14 @@ def cmd_leads(a):
     print("NOTE: Amazon price modelled at list x %.2f - replace with Keepa data." % a.multiplier)
 
 
+def cmd_preflight(a):
+    """Check everything a deployment needs, before deploying."""
+    from . import preflight
+    checks = preflight.run()
+    print(preflight.report(checks))
+    return 1 if any(c.status == "FAIL" for c in checks) else 0
+
+
 def cmd_migrate(a):
     """Copy the local database into hosted Postgres for deployment."""
     from . import migrate
@@ -218,6 +226,9 @@ def main(argv=None):
     p.add_argument("--multiplier", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=60)
     p.set_defaults(fn=cmd_leads)
+
+    p = sub.add_parser("preflight", help="check readiness before deploying")
+    p.set_defaults(fn=cmd_preflight)
 
     p = sub.add_parser("migrate", help="copy local data into hosted Postgres")
     p.add_argument("--batch", type=int, default=500)
