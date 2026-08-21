@@ -6,6 +6,7 @@ step in order, and says plainly which one failed.
 
 It turns "is it sufficient?" from an opinion into a result.
 """
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -39,14 +40,33 @@ def run(live_network=True, keepa_client: Optional[KeepaClient] = None):
         f"min ROI {s.min_roi}%, max BSR {s.max_bsr:,}, inbound ${s.inbound_cost}")
 
     # 2 -- database ----------------------------------------------------------
+    serverless = os.environ.get("VERCEL") is not None
     try:
         conn = db.init()
         st = queries.stats(conn)
+        backend = "Postgres" if db.is_postgres() else "SQLite"
         add("Database", PASS,
-            f"{st['products']:,} products across {st['retailers']} retailers")
+            f"{backend} — {st['products']:,} products across {st['retailers']} retailers")
     except Exception as e:
-        add("Database", FAIL, str(e), "Delete arbitrage.db and re-run ingest.")
+        add("Database", FAIL, str(e),
+            "Check DATABASE_URL, or delete arbitrage.db and re-run ingest."
+            if db.is_postgres() else "Delete arbitrage.db and re-run ingest.")
         return checks
+
+    # Direct Supabase connections exhaust their pool under serverless traffic,
+    # and this only shows up once real requests arrive - so flag it up front.
+    if db.is_postgres():
+        if db.pooled():
+            add("Connection pooling", PASS, "using the transaction-mode pooler")
+        else:
+            add("Connection pooling", FAIL if serverless else WARN,
+                "direct connection, not the pooler",
+                "Use the Supabase pooler URL (port 6543). A direct connection "
+                "runs out of slots once several requests arrive at once.")
+    elif serverless:
+        add("Database backend", FAIL, "SQLite on a serverless platform",
+            "Set DATABASE_URL to your Supabase pooler connection string. "
+            "Serverless storage is wiped between invocations.")
 
     # 3 -- retailer data -----------------------------------------------------
     if st["retailers"] == 0:

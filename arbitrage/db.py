@@ -6,8 +6,15 @@ RETURNING, so inserts are identical, and only placeholder style and the
 autoincrement declaration differ.
 
 Selected by DATABASE_URL:
-    unset                      -> SQLite at ./arbitrage.db
-    postgres://... / postgresql://...  -> Postgres via psycopg3
+    unset                              -> SQLite at ./arbitrage.db
+    postgres://... / postgresql://...  -> Postgres via psycopg3 (Supabase)
+
+SUPABASE NOTE. Serverless functions must connect through the Supavisor pooler on
+port 6543, not the direct connection on 5432 - every invocation opens its own
+connection and a direct pool is exhausted quickly. Transaction-mode pooling also
+forbids prepared statements, which psycopg3 starts using automatically after a
+few executions, so prepared statements are disabled below. Without that, queries
+begin failing only under load, which is the worst way to find out.
 """
 import os
 import re
@@ -121,11 +128,31 @@ class _PGCursor:
         return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
 
+def pooled(url=None) -> bool:
+    """True when pointed at Supabase's transaction-mode pooler."""
+    u = url or database_url()
+    return ":6543" in u or "pooler.supabase.com" in u
+
+
 class _PGConnection:
     def __init__(self, dsn):
         import psycopg
         from psycopg.rows import dict_row
-        self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
+
+        # Supabase requires TLS; add it if the URL does not already say so.
+        if "sslmode=" not in dsn and "supabase" in dsn:
+            dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+
+        self._conn = psycopg.connect(
+            dsn,
+            row_factory=dict_row,
+            autocommit=False,
+            # Transaction-mode pooling rejects prepared statements. Disabling
+            # them costs a little planning time and avoids a class of failure
+            # that only appears once traffic arrives.
+            prepare_threshold=None,
+            connect_timeout=10,
+        )
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
