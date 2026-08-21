@@ -15,7 +15,7 @@
 
 # next.js
 /.next/
-/out/
+# /out/  -- intentionally committed: ships the built UI so Node is not needed at runtime
 
 # production
 /build
