@@ -64,9 +64,15 @@ def _num(env, key, cast, default):
         return default
 
 
+def writable() -> bool:
+    """False on serverless platforms, where .env cannot be written."""
+    return os.environ.get("VERCEL") is None and os.access(ROOT, os.W_OK)
+
+
 def load(path=ENV_PATH) -> Settings:
     e = load_env(path)
-    get = lambda k, d="": e.get(k, os.environ.get(k, d))
+    # Environment wins over .env: on Vercel the key arrives as a project env var.
+    get = lambda k, d="": os.environ.get(k) or e.get(k, d)
     return Settings(
         keepa_api_key=get("KEEPA_API_KEY"),
         keepa_domain=_num(e, "KEEPA_DOMAIN", int, 1),

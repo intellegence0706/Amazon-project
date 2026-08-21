@@ -104,6 +104,20 @@ def cmd_leads(a):
     print("NOTE: Amazon price modelled at list x %.2f - replace with Keepa data." % a.multiplier)
 
 
+def cmd_migrate(a):
+    """Copy the local database into hosted Postgres for deployment."""
+    from . import migrate
+    try:
+        totals = migrate.run(batch=a.batch)
+    except (RuntimeError, FileNotFoundError) as e:
+        print(f"\n{e}\n")
+        return 1
+    print("\n  migrated:")
+    for t, n in totals.items():
+        print(f"    {t:<18} {n:>7,}")
+    print()
+
+
 def cmd_ui(a):
     """Start the engine and open the interface. One command, one URL."""
     import threading
@@ -204,6 +218,10 @@ def main(argv=None):
     p.add_argument("--multiplier", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=60)
     p.set_defaults(fn=cmd_leads)
+
+    p = sub.add_parser("migrate", help="copy local data into hosted Postgres")
+    p.add_argument("--batch", type=int, default=500)
+    p.set_defaults(fn=cmd_migrate)
 
     p = sub.add_parser("ui", help="start the engine and open the interface")
     p.add_argument("--port", type=int, default=8000)

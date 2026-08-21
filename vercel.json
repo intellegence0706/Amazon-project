@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd web && npm install && npm run build",
+  "outputDirectory": "web/out",
+  "functions": {
+    "api/index.py": {
+      "runtime": "@vercel/python@4.3.0",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" }
+  ]
+}

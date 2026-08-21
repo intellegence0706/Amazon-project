@@ -7,7 +7,7 @@
  * work and there is nothing to configure. Override only when running the
  * Next dev server separately.
  */
-export const API = process.env.NEXT_PUBLIC_API_URL ?? "";
+export const API = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export type Check = { name: string; status: "PASS" | "WARN" | "FAIL" | "SKIP"; detail: string; fix: string };
 export type Verification = { ok: boolean; summary: string; checks: Check[] };

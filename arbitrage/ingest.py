@@ -47,13 +47,15 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
         ).fetchone()
 
         if cur is None:
+            # RETURNING rather than lastrowid: works identically on SQLite 3.35+
+            # and Postgres, so the same statement serves both backends.
             pid = conn.execute(
                 """INSERT INTO products (retailer_id, external_id, url, title, brand,
                        sku, upc, pack_qty, grams, first_seen, last_seen)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
                 (r["id"], raw.external_id, raw.url, raw.title, raw.brand, raw.sku,
                  raw.upc, raw.pack_qty, raw.grams, now, now),
-            ).lastrowid
+            ).fetchone()[0]
             stats["new"] += 1
         else:
             pid = cur["id"]

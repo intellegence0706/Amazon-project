@@ -1,34 +1,42 @@
-"""SQLite store. Chosen over Postgres for phase 1 so the demo runs with zero setup.
+"""Data layer. SQLite locally, Postgres in serverless deployment.
 
-Migration path: the schema is plain SQL with no SQLite-specific types. Moving to
-Postgres means swapping the connect() call and adding pg_trgm for fuzzy matching.
+Vercel's filesystem is ephemeral, so SQLite cannot persist there. Rather than
+fork the codebase, both backends run the same SQL: SQLite 3.35+ supports
+RETURNING, so inserts are identical, and only placeholder style and the
+autoincrement declaration differ.
+
+Selected by DATABASE_URL:
+    unset                      -> SQLite at ./arbitrage.db
+    postgres://... / postgresql://...  -> Postgres via psycopg3
 """
+import os
+import re
 import sqlite3
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "arbitrage.db"
 
-SCHEMA = """
+_SCHEMA = """
 CREATE TABLE IF NOT EXISTS retailers (
-    id          INTEGER PRIMARY KEY,
+    id          {pk},
     slug        TEXT UNIQUE NOT NULL,
     name        TEXT NOT NULL,
     host        TEXT NOT NULL,
-    platform    TEXT NOT NULL,          -- shopify | woocommerce | feed | api | scrape
-    tier        INTEGER NOT NULL,       -- 1 open catalog .. 4 paid scraping
+    platform    TEXT NOT NULL,
+    tier        INTEGER NOT NULL,
     enabled     INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS products (
-    id            INTEGER PRIMARY KEY,
+    id            {pk},
     retailer_id   INTEGER NOT NULL REFERENCES retailers(id),
-    external_id   TEXT NOT NULL,        -- retailer's own variant id
+    external_id   TEXT NOT NULL,
     url           TEXT,
     title         TEXT NOT NULL,
     brand         TEXT,
     sku           TEXT,
-    upc           TEXT,                 -- often NULL on tier-1 retailers
-    pack_qty      INTEGER,              -- parsed from title; hard gate when matching
+    upc           TEXT,
+    pack_qty      INTEGER,
     grams         INTEGER,
     first_seen    TEXT NOT NULL,
     last_seen     TEXT NOT NULL,
@@ -36,14 +44,13 @@ CREATE TABLE IF NOT EXISTS products (
 );
 CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand);
 CREATE INDEX IF NOT EXISTS idx_products_upc   ON products(upc);
+CREATE INDEX IF NOT EXISTS idx_products_ret   ON products(retailer_id);
 
--- One row per observed price CHANGE, not per scan. Keeps the table small enough
--- that daily refreshes over years stay cheap.
 CREATE TABLE IF NOT EXISTS price_snapshots (
-    id           INTEGER PRIMARY KEY,
+    id           {pk},
     product_id   INTEGER NOT NULL REFERENCES products(id),
     price        REAL NOT NULL,
-    list_price   REAL,                  -- compare_at_price; > price means on sale
+    list_price   REAL,
     in_stock     INTEGER NOT NULL,
     captured_at  TEXT NOT NULL
 );
@@ -59,25 +66,91 @@ CREATE TABLE IF NOT EXISTS amazon_products (
     amazon_on_listing INTEGER,
     bsr            INTEGER,
     category       TEXT,
-    fba_fee        REAL,                -- authoritative value comes from Keepa
+    fba_fee        REAL,
     referral_pct   REAL,
     refreshed_at   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS matches (
-    id          INTEGER PRIMARY KEY,
+    id          {pk},
     product_id  INTEGER NOT NULL REFERENCES products(id),
     asin        TEXT NOT NULL REFERENCES amazon_products(asin),
     confidence  REAL NOT NULL,
-    method      TEXT NOT NULL,          -- upc | fuzzy | manual
-    status      TEXT NOT NULL,          -- auto | pending | confirmed | rejected
+    method      TEXT NOT NULL,
+    status      TEXT NOT NULL,
     created_at  TEXT NOT NULL,
     UNIQUE (product_id, asin)
 );
 """
 
+SCHEMA_SQLITE = _SCHEMA.format(pk="INTEGER PRIMARY KEY")
+SCHEMA_PG = _SCHEMA.format(pk="INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY")
+
+
+def database_url():
+    return os.environ.get("DATABASE_URL", "").strip()
+
+
+def is_postgres():
+    return database_url().startswith(("postgres://", "postgresql://"))
+
+
+# --------------------------------------------------------------- postgres shim
+# Presents the sqlite3 surface the rest of the codebase already uses: execute()
+# returns a cursor, rows behave like mappings, '?' placeholders work.
+
+_PARAM = re.compile(r"\?(?=(?:[^']*'[^']*')*[^']*$)")
+
+
+class _PGCursor:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def __iter__(self):
+        return iter(self._cur)
+
+    @property
+    def lastrowid(self):
+        row = self._cur.fetchone()
+        return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+
+
+class _PGConnection:
+    def __init__(self, dsn):
+        import psycopg
+        from psycopg.rows import dict_row
+        self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(_PARAM.sub("%s", sql), tuple(params))
+        return _PGCursor(cur)
+
+    def executescript(self, script):
+        with self._conn.cursor() as cur:
+            for stmt in filter(str.strip, script.split(";")):
+                cur.execute(stmt)
+        self._conn.commit()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
 
 def connect(path=DB_PATH):
+    if is_postgres():
+        return _PGConnection(database_url())
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -87,6 +160,10 @@ def connect(path=DB_PATH):
 
 def init(path=DB_PATH):
     conn = connect(path)
-    conn.executescript(SCHEMA)
+    conn.executescript(SCHEMA_PG if is_postgres() else SCHEMA_SQLITE)
     conn.commit()
     return conn
+
+
+# Kept for callers that imported it directly.
+SCHEMA = SCHEMA_SQLITE

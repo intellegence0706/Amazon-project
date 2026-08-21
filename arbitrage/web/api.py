@@ -378,6 +378,13 @@ def set_keepa_key(body: KeepaKeyIn):
     except KeepaError as e:
         raise HTTPException(400, f"Keepa rejected this key: {e}")
 
+    if not config.writable():
+        raise HTTPException(
+            409,
+            "This deployment cannot store the key on disk. Set KEEPA_API_KEY as "
+            "an environment variable in your hosting project settings and redeploy.",
+        )
+
     path = config.ENV_PATH
     lines = path.read_text().splitlines() if path.exists() else []
     lines = [l for l in lines if not l.strip().startswith("KEEPA_API_KEY")]
@@ -386,11 +393,21 @@ def set_keepa_key(body: KeepaKeyIn):
     return get_settings()
 
 
-# ---------------------------------------------------------------- interface
+# ---------------------------------------------------------------- assembly
 #
-# Mounted LAST so every API route above wins the match. The built Next.js export
-# is served from the same origin, which means one process, one URL, and no Node
-# needed at runtime.
+# The API is mounted at /api in BOTH local and serverless deployment, so the
+# frontend bundle is identical everywhere - no build-time target switch, no
+# environment-specific rebuild.
+
+_routes = app          # the application carrying every endpoint defined above
+
+app = FastAPI(
+    title=_routes.title,
+    version=_routes.version,
+    description=_routes.description,
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
+app.mount("/api", _routes, name="api")
 
 _UI_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "web" / "out"
 
@@ -398,7 +415,7 @@ if _UI_DIR.is_dir():
     from fastapi.staticfiles import StaticFiles
 
     class _SPAFiles(StaticFiles):
-        """Serve exported pages, falling back to 404.html rather than a bare error."""
+        """Serve the exported pages, falling back to 404.html over a bare error."""
 
         async def get_response(self, path: str, scope):
             try:
@@ -416,8 +433,6 @@ if _UI_DIR.is_dir():
 else:
     @app.get("/", include_in_schema=False)
     def _no_ui():
-        return {
-            "detail": "Interface not built.",
-            "fix": "cd web && npm install && npm run build",
-            "api_docs": "/docs",
-        }
+        return {"detail": "Interface not built.",
+                "fix": "cd web && npm install && npm run build",
+                "api_docs": "/api/docs"}
