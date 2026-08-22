@@ -65,6 +65,15 @@ export type ProductPage = {
   total: number; count: number; offset: number; items: Product[];
 };
 
+export type ActivityItem = {
+  product_id: number; retailer: string; title: string;
+  brand: string | null; url: string | null; image_url: string | null;
+  old_price: number; new_price: number; change_pct: number;
+  direction: "up" | "down"; in_stock: boolean; captured_at: string;
+};
+
+export type Freshness = { last_scan: string | null; changes_in_last_scan: number };
+
 export type Funnel = {
   skus_ingested: number; discounted_in_stock: number; discounted_pct: number;
   within_price_band: number; band_pct: number;
@@ -122,6 +131,9 @@ export const api = {
 
   verified: (p: { min_roi?: number; include_pending?: boolean; retailer?: string; limit?: number }) =>
     req<LeadPage>(`/leads/verified?${qs(p)}`),
+
+  activity:  (limit = 30) => req<ActivityItem[]>(`/activity?limit=${limit}`),
+  freshness: () => req<Freshness>("/freshness"),
 
   products: (p: { retailer?: string; q?: string; on_sale?: boolean;
                   in_stock?: boolean; limit?: number; offset?: number }) =>

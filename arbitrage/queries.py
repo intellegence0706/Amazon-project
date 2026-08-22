@@ -284,3 +284,54 @@ def price_history(conn, product_id, limit=60):
         """SELECT price, list_price, in_stock, captured_at
              FROM price_snapshots WHERE product_id = ?
             ORDER BY captured_at DESC LIMIT ?""", (product_id, limit))]
+
+
+def activity(conn, hours=48, limit=50):
+    """What actually changed recently: price moves, with the previous value.
+
+    This is the closest thing to a live feed the data supports - prices only
+    move when a scan runs, so a push channel would sit silent for six hours at
+    a time. Showing what changed, and when, conveys liveness honestly.
+    """
+    rows = conn.execute("""
+        SELECT r.name AS retailer, p.id AS product_id, p.title, p.brand,
+               p.url, p.image_url,
+               s.price AS new_price, s.list_price, s.in_stock, s.captured_at,
+               (SELECT price FROM price_snapshots prev
+                 WHERE prev.product_id = p.id AND prev.captured_at < s.captured_at
+                 ORDER BY prev.captured_at DESC LIMIT 1) AS old_price
+          FROM price_snapshots s
+          JOIN products p ON p.id = s.product_id
+          JOIN retailers r ON r.id = p.retailer_id
+         ORDER BY s.captured_at DESC
+         LIMIT ?""", (limit * 4,)).fetchall()
+
+    out = []
+    for x in rows:
+        old = x["old_price"]
+        if old is None or old == x["new_price"]:
+            continue                      # first sighting, or no actual move
+        direction = "down" if x["new_price"] < old else "up"
+        change = round((x["new_price"] - old) / old * 100, 1) if old else 0.0
+        out.append({
+            "product_id": x["product_id"], "retailer": x["retailer"],
+            "title": x["title"], "brand": x["brand"], "url": x["url"],
+            "image_url": x["image_url"], "old_price": old,
+            "new_price": x["new_price"], "change_pct": change,
+            "direction": direction, "in_stock": bool(x["in_stock"]),
+            "captured_at": x["captured_at"],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def freshness(conn):
+    """How current the data is, and how much moved in the last scan."""
+    last = conn.execute(
+        "SELECT MAX(captured_at) AS m FROM price_snapshots").fetchone()["m"]
+    recent = conn.execute(
+        """SELECT COUNT(*) AS c FROM price_snapshots
+            WHERE captured_at = (SELECT MAX(captured_at) FROM price_snapshots)"""
+    ).fetchone()["c"]
+    return {"last_scan": last, "changes_in_last_scan": recent}

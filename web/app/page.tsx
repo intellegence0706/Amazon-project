@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { LiveStatus } from "@/components/LiveStatus";
 import { api, type Check, type Funnel, type Health, type Retailer, type Settings, type Stats, type Verification } from "@/lib/api";
 
 export default function Dashboard() {
@@ -120,6 +121,8 @@ export default function Dashboard() {
           </>
         )}
       </section>
+
+      <LiveStatus />
 
       {/* ---- stats ---- */}
       <section className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(9rem,1fr))" }}>

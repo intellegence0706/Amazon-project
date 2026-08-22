@@ -452,6 +452,44 @@ def product_history(product_id: int, limit: int = Query(60, ge=1, le=500),
     return rows
 
 
+
+class ActivityItem(BaseModel):
+    product_id: int
+    retailer: str
+    title: str
+    brand: Optional[str] = None
+    url: Optional[str] = None
+    image_url: Optional[str] = None
+    old_price: float
+    new_price: float
+    change_pct: float
+    direction: str
+    in_stock: bool
+    captured_at: str
+
+
+class Freshness(BaseModel):
+    last_scan: Optional[str] = None
+    changes_in_last_scan: int
+
+
+@app.get("/activity", response_model=List[ActivityItem], tags=["catalog"])
+def recent_activity(limit: int = Query(30, ge=1, le=200), conn=Depends(get_conn)):
+    """Recent price movements, each with the previous price.
+
+    Poll this for a live view. Prices only move when a scan runs, so there is
+    nothing to push between scans - a feed of what changed is both honest and
+    more useful than an idle socket.
+    """
+    return queries.activity(conn, limit=limit)
+
+
+@app.get("/freshness", response_model=Freshness, tags=["meta"])
+def data_freshness(conn=Depends(get_conn)):
+    """When the data was last refreshed, and how much moved."""
+    return queries.freshness(conn)
+
+
 class KeepaKeyIn(BaseModel):
     api_key: str = Field(min_length=8, description="Keepa API key")
 
