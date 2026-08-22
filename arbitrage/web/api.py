@@ -7,6 +7,7 @@ machine-readably.
 """
 import csv
 import io
+import os
 import pathlib
 from typing import List, Optional
 
@@ -55,8 +56,17 @@ def get_conn():
     except Exception as e:                                   # noqa: BLE001
         raw = str(e)
         if not db.is_postgres():
-            detail = f"Cannot open the local database: {raw[:120]}"
-            fix = "Delete arbitrage.db and re-run ingest."
+            # On serverless the filesystem is read-only, so falling back to
+            # SQLite can never work - the real problem is a missing env var.
+            if os.environ.get("VERCEL"):
+                detail = "DATABASE_URL is not set on this deployment."
+                fix = ("Add DATABASE_URL (your Supabase transaction-pooler "
+                       "string, port 6543) in the hosting project's environment "
+                       "variables, then redeploy. Serverless storage is "
+                       "read-only, so the local database cannot be used here.")
+            else:
+                detail = f"Cannot open the local database: {raw[:120]}"
+                fix = "Delete arbitrage.db and re-run ingest."
         elif "password authentication failed" in raw:
             detail = "DATABASE_URL is set, but Supabase rejected the password."
             fix = ("Either unset DATABASE_URL to use the local database, or "
