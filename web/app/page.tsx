@@ -179,10 +179,20 @@ export default function Dashboard() {
             <tbody>
               {retailers.map((r) => (
                 <tr key={r.slug}>
-                  <td><strong>{r.name}</strong><div className="tiny muted mono">{r.host}</div></td>
+                  <td>
+                    <a href={`/products?retailer=${r.slug}`}
+                       style={{ color: "var(--ink)", fontWeight: 600, textDecoration: "none" }}>
+                      {r.name}
+                    </a>
+                    <div className="tiny muted mono">{r.host}</div>
+                  </td>
                   <td className="tiny">{r.platform}</td>
                   <td><span className={`pill ${r.tier === 1 ? "PASS" : r.tier === 4 ? "FAIL" : "WARN"}`}>tier {r.tier}</span></td>
-                  <td className="n">{r.products.toLocaleString()}</td>
+                  <td className="n">
+                    <a href={`/products?retailer=${r.slug}`} style={{ color: "var(--accent)" }}>
+                      {r.products.toLocaleString()}
+                    </a>
+                  </td>
                   <td>
                     {health?.scanning_available === false ? (
                       <span className="tiny muted">auto every 6h</span>

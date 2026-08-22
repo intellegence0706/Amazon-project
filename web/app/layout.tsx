@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="inner">
             <span className="brand">Sourcing Engine</span>
             <a href="/">Dashboard</a>
+            <a href="/products">Products</a>
             <a href="/leads">Leads</a>
             <span style={{ marginLeft: "auto" }} className="eyebrow">Phase 1</span>
           </div>

@@ -52,6 +52,18 @@ export type LeadPage = {
   items: Lead[]; modelled: boolean; note: string;
 };
 
+export type Product = {
+  product_id: number; retailer: string; retailer_slug: string;
+  title: string; brand: string | null; url: string | null;
+  sku: string | null; upc: string | null; pack_qty: number | null;
+  price: number; list_price: number | null; in_stock: boolean;
+  discount_pct: number | null; captured_at: string;
+};
+
+export type ProductPage = {
+  total: number; count: number; offset: number; items: Product[];
+};
+
 export type Funnel = {
   skus_ingested: number; discounted_in_stock: number; discounted_pct: number;
   within_price_band: number; band_pct: number;
@@ -109,6 +121,10 @@ export const api = {
 
   verified: (p: { min_roi?: number; include_pending?: boolean; retailer?: string; limit?: number }) =>
     req<LeadPage>(`/leads/verified?${qs(p)}`),
+
+  products: (p: { retailer?: string; q?: string; on_sale?: boolean;
+                  in_stock?: boolean; limit?: number; offset?: number }) =>
+    req<ProductPage>(`/products?${qs(p)}`),
 
   csvUrl: (min_discount = 15) => `${API}/export.csv?${qs({ min_discount })}`,
 };

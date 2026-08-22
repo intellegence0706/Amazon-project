@@ -392,6 +392,65 @@ def run_match(limit: int = Query(25, ge=1, le=500), min_discount: float = 15.0,
     return MatchStats(**st, keepa_mode=client.mode)
 
 
+
+class Product(BaseModel):
+    product_id: int
+    retailer: str
+    retailer_slug: str
+    title: str
+    brand: Optional[str] = None
+    url: Optional[str] = None
+    sku: Optional[str] = None
+    upc: Optional[str] = None
+    pack_qty: Optional[int] = None
+    price: float
+    list_price: Optional[float] = None
+    in_stock: bool
+    discount_pct: Optional[float] = None
+    captured_at: str
+
+
+class ProductPage(Page):
+    items: List[Product]
+
+
+class PricePoint(BaseModel):
+    price: float
+    list_price: Optional[float] = None
+    in_stock: bool
+    captured_at: str
+
+
+@app.get("/products", response_model=ProductPage, tags=["catalog"])
+def list_products(
+    retailer: Optional[str] = Query(None, description="Retailer slug"),
+    q: Optional[str] = Query(None, description="Search title and brand"),
+    on_sale: Optional[bool] = None,
+    in_stock: Optional[bool] = None,
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, gt=0),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    conn=Depends(get_conn),
+):
+    """Browse a retailer's full catalog, discounted or not."""
+    total, rows = queries.products(
+        conn, retailer=retailer, q=q, on_sale=on_sale, in_stock=in_stock,
+        min_price=min_price, max_price=max_price, limit=limit, offset=offset)
+    return ProductPage(total=total, count=len(rows), offset=offset, items=rows)
+
+
+@app.get("/products/{product_id}/history", response_model=List[PricePoint],
+         tags=["catalog"])
+def product_history(product_id: int, limit: int = Query(60, ge=1, le=500),
+                    conn=Depends(get_conn)):
+    """Every recorded price change for one product."""
+    rows = queries.price_history(conn, product_id, limit=limit)
+    if not rows:
+        raise HTTPException(404, f"no price history for product {product_id}")
+    return rows
+
+
 class KeepaKeyIn(BaseModel):
     api_key: str = Field(min_length=8, description="Keepa API key")
 

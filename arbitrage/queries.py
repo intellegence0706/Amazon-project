@@ -218,3 +218,69 @@ def matched_leads(conn, min_roi=30.0, min_profit=0.0, only_auto=True,
             referral_fee=ev.referral_fee, fba_fee=ev.fba_fee,
             flags=tuple(ev.flags), modelled=False))
     return len(out), out[offset:offset + limit]
+
+
+def products(conn, retailer=None, q=None, on_sale=None, in_stock=None,
+             min_price=None, max_price=None, limit=100, offset=0):
+    """Browse a retailer's full catalog, not just the discounted rows.
+
+    sales() answers "what is on offer"; this answers "what does this shop
+    actually stock", which is what you need when judging whether a retailer is
+    worth keeping in the list at all.
+    """
+    where, args = ["1=1"], []
+    if retailer:
+        where.append("r.slug = ?")
+        args.append(retailer)
+    if q:
+        where.append("(LOWER(p.title) LIKE ? OR LOWER(p.brand) LIKE ?)")
+        term = f"%{q.lower()}%"
+        args += [term, term]
+    if on_sale is True:
+        where.append("s.list_price IS NOT NULL AND s.list_price > s.price")
+    elif on_sale is False:
+        where.append("(s.list_price IS NULL OR s.list_price <= s.price)")
+    if in_stock is not None:
+        where.append("s.in_stock = ?")
+        args.append(1 if in_stock else 0)
+    if min_price is not None:
+        where.append("s.price >= ?")
+        args.append(min_price)
+    if max_price is not None:
+        where.append("s.price <= ?")
+        args.append(max_price)
+
+    clause = " AND ".join(where)
+    total = conn.execute(
+        f"""SELECT COUNT(*) AS c
+              FROM products p
+              JOIN retailers r ON r.id = p.retailer_id
+              JOIN price_snapshots s ON s.id = (
+                   SELECT id FROM price_snapshots
+                    WHERE product_id = p.id ORDER BY captured_at DESC LIMIT 1)
+             WHERE {clause}""", args).fetchone()["c"]
+
+    rows = conn.execute(
+        f"""{_BASE} WHERE {clause}
+             ORDER BY discount_pct DESC NULLS LAST, p.title
+             LIMIT ? OFFSET ?""", [*args, limit, offset]).fetchall()
+
+    return total, [{
+        "product_id": r["product_id"], "retailer": r["retailer"],
+        "retailer_slug": r["retailer_slug"], "title": r["title"],
+        "brand": r["brand"], "url": r["url"], "sku": r["sku"], "upc": r["upc"],
+        "pack_qty": r["pack_qty"], "price": r["price"],
+        "list_price": r["list_price"], "in_stock": bool(r["in_stock"]),
+        "discount_pct": r["discount_pct"], "captured_at": r["captured_at"],
+    } for r in rows]
+
+
+def price_history(conn, product_id, limit=60):
+    """Every recorded price change for one product."""
+    return [{
+        "price": r["price"], "list_price": r["list_price"],
+        "in_stock": bool(r["in_stock"]), "captured_at": r["captured_at"],
+    } for r in conn.execute(
+        """SELECT price, list_price, in_stock, captured_at
+             FROM price_snapshots WHERE product_id = ?
+            ORDER BY captured_at DESC LIMIT ?""", (product_id, limit))]
