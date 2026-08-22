@@ -56,6 +56,7 @@ export type Product = {
   product_id: number; retailer: string; retailer_slug: string;
   title: string; brand: string | null; url: string | null;
   sku: string | null; upc: string | null; pack_qty: number | null;
+  image_url: string | null;
   price: number; list_price: number | null; in_stock: boolean;
   discount_pct: number | null; captured_at: string;
 };

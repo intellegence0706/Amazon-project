@@ -13,7 +13,7 @@ from .economics import evaluate
 # Latest snapshot per product, joined to its retailer. Everything reads from this.
 _BASE = """
 SELECT r.slug AS retailer_slug, r.name AS retailer, p.id AS product_id,
-       p.title, p.brand, p.url, p.sku, p.upc, p.pack_qty, p.grams,
+       p.title, p.brand, p.url, p.sku, p.upc, p.pack_qty, p.grams, p.image_url,
        s.price, s.list_price, s.in_stock, s.captured_at,
        ROUND(CAST((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100 AS NUMERIC), 1) AS discount_pct
   FROM products p
@@ -269,7 +269,7 @@ def products(conn, retailer=None, q=None, on_sale=None, in_stock=None,
         "product_id": r["product_id"], "retailer": r["retailer"],
         "retailer_slug": r["retailer_slug"], "title": r["title"],
         "brand": r["brand"], "url": r["url"], "sku": r["sku"], "upc": r["upc"],
-        "pack_qty": r["pack_qty"], "price": r["price"],
+        "pack_qty": r["pack_qty"], "image_url": r["image_url"], "price": r["price"],
         "list_price": r["list_price"], "in_stock": bool(r["in_stock"]),
         "discount_pct": r["discount_pct"], "captured_at": r["captured_at"],
     } for r in rows]

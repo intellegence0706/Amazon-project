@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS products (
     upc           TEXT,
     pack_qty      INTEGER,
     grams         INTEGER,
+    image_url     TEXT,
     first_seen    TEXT NOT NULL,
     last_seen     TEXT NOT NULL,
     UNIQUE (retailer_id, external_id)
@@ -219,10 +220,27 @@ def connect(path=DB_PATH):
     return conn
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS will not
+# add them to a database that already exists, so apply them separately.
+_MIGRATIONS = [
+    ("products", "image_url", "TEXT"),
+]
+
+
+def _migrate(conn):
+    for table, column, coltype in _MIGRATIONS:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            conn.commit()
+        except Exception:                       # noqa: BLE001 - already present
+            conn.rollback() if hasattr(conn, "rollback") else None
+
+
 def init(path=DB_PATH):
     conn = connect(path)
     conn.executescript(SCHEMA_PG if is_postgres() else SCHEMA_SQLITE)
     conn.commit()
+    _migrate(conn)
     return conn
 
 

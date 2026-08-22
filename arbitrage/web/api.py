@@ -403,6 +403,7 @@ class Product(BaseModel):
     sku: Optional[str] = None
     upc: Optional[str] = None
     pack_qty: Optional[int] = None
+    image_url: Optional[str] = None
     price: float
     list_price: Optional[float] = None
     in_stock: bool

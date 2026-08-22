@@ -35,6 +35,8 @@ class ShopifyAdapter(Adapter):
     def _variants(self, p):
         handle = p.get("handle", "")
         brand = (p.get("vendor") or "").strip() or None
+        images = p.get("images") or []
+        product_image = images[0].get("src") if images else None
         for v in p.get("variants", []):
             price = _num(v.get("price"))
             # Zero/near-zero rows are gifts-with-purchase and promo placeholders,
@@ -52,6 +54,10 @@ class ShopifyAdapter(Adapter):
             if vt and vt.lower() != "default title":
                 title = f"{title} - {vt}"
 
+            # Variant image where one exists, otherwise the product's first.
+            vimg = v.get("featured_image") or {}
+            image = (vimg.get("src") if isinstance(vimg, dict) else None) or product_image
+
             yield RawProduct(
                 external_id=str(v["id"]),
                 title=title,
@@ -63,8 +69,18 @@ class ShopifyAdapter(Adapter):
                 upc=(v.get("barcode") or "").strip() or None,
                 url=f"https://{self.host}/products/{handle}" if handle else None,
                 grams=v.get("grams"),
+                image_url=_thumb(image),
                 pack_qty=parse_pack_qty(title),
             )
+
+
+def _thumb(url, width=160):
+    """Shopify serves resized variants via a query parameter - ask for a small
+    one rather than shipping full-resolution images into a table view."""
+    if not url:
+        return None
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}width={width}"
 
 
 def _num(x):

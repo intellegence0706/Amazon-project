@@ -28,8 +28,11 @@ def cmd_add(a):
 def cmd_ingest(a):
     conn = db.init()
     s = ingest.ingest(conn, a.slug, max_pages=a.pages)
-    print(f"{a.slug}: {s['seen']} variants  {s['new']} new  "
-          f"{s['price_changes']} price changes  {s['on_sale']} on sale")
+    line = (f"{a.slug}: {s['seen']} variants  {s['new']} new  "
+            f"{s['price_changes']} price changes  {s['on_sale']} on sale")
+    if s.get("images"):
+        line += f"  {s['images']} images"
+    print(line)
 
 
 def cmd_sales(a):

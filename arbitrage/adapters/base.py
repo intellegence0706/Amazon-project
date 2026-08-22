@@ -21,6 +21,7 @@ class RawProduct:
     upc: Optional[str] = None
     url: Optional[str] = None
     grams: Optional[int] = None
+    image_url: Optional[str] = None
     pack_qty: Optional[int] = field(default=None)
 
     @property

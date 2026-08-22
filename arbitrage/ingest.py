@@ -42,14 +42,16 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
 
     adapter = adapter_cls(r["host"], fetcher or DirectFetcher(), max_pages=max_pages)
     now = _now()
-    stats = {"seen": 0, "new": 0, "price_changes": 0, "on_sale": 0}
+    stats = {"seen": 0, "new": 0, "price_changes": 0, "on_sale": 0, "images": 0}
 
     # --- one query: every product we already hold for this retailer ---------
-    existing = {
-        row["external_id"]: row["id"]
-        for row in conn.execute(
-            "SELECT id, external_id FROM products WHERE retailer_id=?", (r["id"],))
-    }
+    existing, missing_image = {}, set()
+    for row in conn.execute(
+            "SELECT id, external_id, image_url FROM products WHERE retailer_id=?",
+            (r["id"],)):
+        existing[row["external_id"]] = row["id"]
+        if not row["image_url"]:
+            missing_image.add(row["id"])
 
     # --- one query: the most recent snapshot for each of them --------------
     latest = {
@@ -65,7 +67,7 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
             (r["id"],))
     }
 
-    touched, snapshots, pending_new = [], [], []
+    touched, snapshots, pending_new, image_fixes = [], [], [], []
 
     for raw in adapter.products():
         stats["seen"] += 1
@@ -80,6 +82,10 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
             continue
 
         touched.append(pid)
+        # Backfill images for products stored before image capture existed.
+        if pid in missing_image and raw.image_url:
+            image_fixes.append((pid, raw.image_url))
+            missing_image.discard(pid)
         prev = latest.get(pid)
         if _changed(prev, raw):
             snapshots.append((pid, raw.price, raw.list_price, int(raw.in_stock), now))
@@ -90,9 +96,9 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
         returned = _insert_many(
             conn, "products",
             ["retailer_id", "external_id", "url", "title", "brand", "sku",
-             "upc", "pack_qty", "grams", "first_seen", "last_seen"],
+             "upc", "pack_qty", "grams", "image_url", "first_seen", "last_seen"],
             [(r["id"], p.external_id, p.url, p.title, p.brand, p.sku, p.upc,
-              p.pack_qty, p.grams, now, now) for p in pending_new],
+              p.pack_qty, p.grams, p.image_url, now, now) for p in pending_new],
             returning="id, external_id")
         # Map by external_id rather than trusting row order.
         new_ids = {row["external_id"]: row["id"] for row in returned}
@@ -101,6 +107,20 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
             raw = by_ext[ext]
             snapshots.append((pid, raw.price, raw.list_price, int(raw.in_stock), now))
             stats["price_changes"] += 1
+
+    # --- backfill missing images ------------------------------------------
+    # CASE keeps this to one statement per chunk instead of one per row, and is
+    # portable to both backends.
+    for chunk in _chunks(image_fixes, 200):
+        cases = " ".join("WHEN ? THEN ?" for _ in chunk)
+        ids = ",".join("?" * len(chunk))
+        params = [v for pair in chunk for v in pair] + [pid for pid, _ in chunk]
+        conn.execute(
+            f"UPDATE products SET image_url = CASE id {cases} END WHERE id IN ({ids})",
+            params)
+    if image_fixes:
+        conn.commit()
+        stats["images"] = len(image_fixes)
 
     # --- price snapshots, in batches --------------------------------------
     if snapshots:

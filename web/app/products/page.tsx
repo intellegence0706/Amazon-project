@@ -101,14 +101,14 @@ export default function ProductsPage() {
         <table>
           <thead>
             <tr>
-              <th>Retailer</th><th>Product</th><th>Pack</th>
+              <th></th><th>Retailer</th><th>Product</th><th>Pack</th>
               <th>Price</th><th>Was</th><th>Off</th><th>Stock</th><th>Seen</th>
             </tr>
           </thead>
           <tbody>
             {(page?.items ?? []).map((p) => <Row key={p.product_id} p={p} />)}
             {!loading && !shown && (
-              <tr><td colSpan={8} className="muted tiny" style={{ padding: "1.5rem" }}>
+              <tr><td colSpan={9} className="muted tiny" style={{ padding: "1.5rem" }}>
                 No products match these filters.
               </td></tr>
             )}
@@ -134,6 +134,16 @@ function Row({ p }: { p: Product }) {
   const band = d >= 50 ? "FAIL" : d >= 30 ? "WARN" : "PASS";
   return (
     <tr>
+      <td style={{ width: "3.5rem" }}>
+        {p.image_url ? (
+          <img src={p.image_url} alt="" loading="lazy" width={44} height={44}
+               style={{ width: 44, height: 44, objectFit: "contain",
+                        borderRadius: 3, background: "var(--surface-alt)" }} />
+        ) : (
+          <div aria-hidden style={{ width: 44, height: 44, borderRadius: 3,
+                 background: "var(--surface-alt)", border: "1px solid var(--line-soft)" }} />
+        )}
+      </td>
       <td className="tiny muted">{p.retailer}</td>
       <td>
         {p.url ? <a href={p.url} target="_blank" rel="noopener">{p.title.slice(0, 70)}</a>
