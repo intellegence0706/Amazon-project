@@ -31,7 +31,9 @@ def run():
         return out
     # Pasting the example verbatim is the single most common setup mistake.
     PLACEHOLDERS = ("YOUR_REAL_PASSWORD", "YOUR-PASSWORD", "[YOUR-PASSWORD]",
-                    "YOURPASSWORD", "PASSWORD", "your_password", "<password>")
+                    "YOURPASSWORD", "PASSWORD", "your_password", "<password>",
+                    "REALPW", "REAL_PW", "REALPASSWORD", "PasteYourRealPassword",
+                    "yourpassword", "changeme", "xxx", "XXX")
     userinfo = url.split("@")[0]
     if any(ph in userinfo for ph in PLACEHOLDERS):
         add("DATABASE_URL", FAIL, "password is still the example placeholder",
