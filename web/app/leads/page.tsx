@@ -84,7 +84,7 @@ export default function LeadsPage() {
         {page && !page.modelled && " · verified against Amazon"}
       </p>
 
-      <div className="tablewrap">
+      <div className="tablewrap sticky">
         <table>
           <thead>
             <tr>

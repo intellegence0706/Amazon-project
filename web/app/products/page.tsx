@@ -105,7 +105,7 @@ export default function ProductsPage() {
       <Pagination total={total} offset={offset} pageSize={pageSize}
                   onOffset={setOffset} onPageSize={setPageSize} />
 
-      <div className="tablewrap">
+      <div className="tablewrap sticky">
         <table>
           <thead>
             <tr>

@@ -183,18 +183,32 @@ label.field span {
 
 /* ---------- tables ---------- */
 .tablewrap {
-  overflow-x: auto; border: 1px solid var(--line);
+  overflow-x: auto; overflow-y: hidden;
+  border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
-table { border-collapse: collapse; width: 100%; font-size: .9rem; min-width: 50rem; }
-th, td { text-align: left; padding: .7rem .9rem; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+/* border-collapse: separate, NOT collapse.
+   Sticky table headers are unreliable under border-collapse: collapse - the
+   header detaches and floats over the first body row, hiding it. Separate
+   borders with zero spacing look identical and let sticky work. */
+table {
+  border-collapse: separate; border-spacing: 0;
+  width: 100%; font-size: .9rem; min-width: 50rem;
+}
+th, td {
+  text-align: left; padding: .7rem .9rem; vertical-align: middle;
+  border-bottom: 1px solid var(--line-soft);
+}
 thead th {
   font-family: "IBM Plex Mono", monospace; font-size: .58rem; font-weight: 600;
   letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft);
   background: var(--surface-alt); border-bottom: 1px solid var(--line);
-  position: sticky; top: 3.5rem; z-index: 1;
 }
+/* Sticky is opt-in: worth it on a long product list, pointless on a five-row
+   table and a source of exactly the bug above. */
+.tablewrap.sticky { overflow-y: visible; }
+.tablewrap.sticky thead th { position: sticky; top: 3.5rem; z-index: 2; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background .1s; }
 tbody tr:hover { background: var(--accent-soft); }
