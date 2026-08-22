@@ -174,6 +174,8 @@ class Health(BaseModel):
     status: str
     keepa_configured: bool
     amazon_data: str
+    serverless: bool = False
+    scanning_available: bool = True
 
 
 # ---------------------------------------------------------------- endpoints
@@ -182,10 +184,13 @@ class Health(BaseModel):
 def health(conn=Depends(get_conn)):
     """Liveness plus an honest statement of what the Amazon side can do."""
     has_amz = conn.execute("SELECT COUNT(*) FROM amazon_products").fetchone()[0] > 0
+    serverless = os.environ.get("VERCEL") is not None
     return Health(
         status="ok",
         keepa_configured=has_amz,
         amazon_data="live" if has_amz else "modelled - no Keepa key configured",
+        serverless=serverless,
+        scanning_available=not serverless,
     )
 
 
@@ -280,6 +285,15 @@ def run_ingest(slug: str, pages: Optional[int] = Query(None, ge=1, le=200),
     Synchronous by design at phase-1 scale. Move to a queue before adding
     retailers with large catalogs.
     """
+    if os.environ.get("VERCEL"):
+        raise HTTPException(
+            501,
+            "Scanning is not available on this deployment. A catalog scan takes "
+            "30-90 seconds and serverless functions are cut off long before that. "
+            "Data here is refreshed automatically every 6 hours by a scheduled "
+            "job, and can be refreshed on demand by running "
+            "'arbitrage ingest <retailer>' with DATABASE_URL set.",
+        )
     try:
         s = ingest.ingest(conn, slug, max_pages=pages)
     except KeyError:
@@ -362,6 +376,13 @@ def run_match(limit: int = Query(25, ge=1, le=500), min_discount: float = 15.0,
 
     Costs Keepa tokens. Only funnel survivors are attempted.
     """
+    if os.environ.get("VERCEL") and limit > 5:
+        raise HTTPException(
+            501,
+            "Matching more than 5 products at a time is not available on this "
+            "deployment - each product needs a Keepa round trip and serverless "
+            "functions are cut off first. The scheduled job handles bulk matching.",
+        )
     from .. import config, matching
     from ..keepa import KeepaClient, fixture_client
     cfg = config.load()

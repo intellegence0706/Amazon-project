@@ -12,6 +12,14 @@ export const API = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 export type Check = { name: string; status: "PASS" | "WARN" | "FAIL" | "SKIP"; detail: string; fix: string };
 export type Verification = { ok: boolean; summary: string; checks: Check[] };
 
+export type Health = {
+  status: string;
+  keepa_configured: boolean;
+  amazon_data: string;
+  serverless: boolean;
+  scanning_available: boolean;
+};
+
 export type Settings = {
   keepa_configured: boolean;
   keepa_key_masked: string | null;
@@ -75,6 +83,7 @@ const qs = (p: Record<string, string | number | boolean | undefined>) =>
     .join("&");
 
 export const api = {
+  health:    () => req<Health>("/health"),
   stats:     () => req<Stats>("/stats"),
   settings:  () => req<Settings>("/settings"),
   retailers: () => req<Retailer[]>("/retailers"),

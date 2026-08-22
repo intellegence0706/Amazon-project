@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type Check, type Funnel, type Retailer, type Settings, type Stats, type Verification } from "@/lib/api";
+import { api, type Check, type Funnel, type Health, type Retailer, type Settings, type Stats, type Verification } from "@/lib/api";
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -13,13 +13,15 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, cfg, r, f] = await Promise.all([
-        api.stats(), api.settings(), api.retailers(), api.funnel(),
+      const [s, cfg, r, f, h] = await Promise.all([
+        api.stats(), api.settings(), api.retailers(), api.funnel(), api.health(),
       ]);
-      setStats(s); setSettings(cfg); setRetailers(r); setFunnel(f); setError(null);
+      setStats(s); setSettings(cfg); setRetailers(r); setFunnel(f); setHealth(h);
+      setError(null);
     } catch (e) {
       const msg = (e as Error).message;
       // A 503 means the engine IS running and told us what is wrong; only a
@@ -145,7 +147,14 @@ export default function Dashboard() {
 
       {/* ---- step 3: scan ---- */}
       <section className="card">
-        <span className="eyebrow">Step 3 — Scan retailers</span>
+        <span className="eyebrow">Step 3 — Retailers</span>
+        {health?.scanning_available === false && (
+          <p className="muted tiny" style={{ margin: ".4rem 0 0" }}>
+            Catalogs refresh automatically every 6 hours. Scans run on a schedule
+            rather than on demand, because a full catalog scan takes longer than a
+            web request is allowed to.
+          </p>
+        )}
         <div className="tablewrap" style={{ marginTop: ".75rem" }}>
           <table>
             <thead>
@@ -159,11 +168,15 @@ export default function Dashboard() {
                   <td><span className={`pill ${r.tier === 1 ? "PASS" : r.tier === 4 ? "FAIL" : "WARN"}`}>tier {r.tier}</span></td>
                   <td className="n">{r.products.toLocaleString()}</td>
                   <td>
-                    <button className="ghost" disabled={busy !== null}
-                      onClick={() => run(`scan-${r.slug}`, () => api.ingest(r.slug, 4),
-                        (res) => `${r.name}: ${res.seen} scanned, ${res.new} new, ${res.price_changes} price changes, ${res.on_sale} on sale.`)}>
-                      {busy === `scan-${r.slug}` ? "Scanning…" : "Scan"}
-                    </button>
+                    {health?.scanning_available === false ? (
+                      <span className="tiny muted">auto every 6h</span>
+                    ) : (
+                      <button className="ghost" disabled={busy !== null}
+                        onClick={() => run(`scan-${r.slug}`, () => api.ingest(r.slug, 4),
+                          (res) => `${r.name}: ${res.seen} scanned, ${res.new} new, ${res.price_changes} price changes, ${res.on_sale} on sale.`)}>
+                        {busy === `scan-${r.slug}` ? "Scanning…" : "Scan"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
