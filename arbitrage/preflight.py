@@ -29,6 +29,21 @@ def run():
         add("DATABASE_URL", FAIL, "set, but not a Postgres URL",
             "It must begin with postgresql:// — copy it from Supabase.")
         return out
+    # Pasting the example verbatim is the single most common setup mistake.
+    PLACEHOLDERS = ("YOUR_REAL_PASSWORD", "YOUR-PASSWORD", "[YOUR-PASSWORD]",
+                    "YOURPASSWORD", "PASSWORD", "your_password", "<password>")
+    userinfo = url.split("@")[0]
+    if any(ph in userinfo for ph in PLACEHOLDERS):
+        add("DATABASE_URL", FAIL, "password is still the example placeholder",
+            "Replace it with your real Supabase database password. "
+            "Forgot it? Supabase → Settings → Database → Reset database password.")
+        return out
+    if "[" in userinfo or "]" in userinfo:
+        add("DATABASE_URL", FAIL, "square brackets left in the string",
+            "Remove the [ ] around the password — they are placeholder markers, "
+            "not part of the value.")
+        return out
+
     add("DATABASE_URL", PASS, f"…@{url.split('@')[-1][:46]}")
 
     # 2 -- pooler, not direct ----------------------------------------------
@@ -44,10 +59,24 @@ def run():
         conn = db.init()
         add("Supabase reachable", PASS, "connected, schema created")
     except Exception as e:
-        msg = str(e).split("\n")[0][:80]
-        add("Supabase reachable", FAIL, msg,
-            "Check the password is correct and the project is not paused "
-            "(free-tier projects pause after ~1 week idle).")
+        raw = str(e)
+        msg = raw.split("\n")[0][:80]
+        if "password authentication failed" in raw:
+            add("Supabase reachable", FAIL,
+                "reached the server, but the password was rejected",
+                "The network, region and port are all correct — only the password "
+                "is wrong. Supabase → Settings → Database → Reset database password, "
+                "then use the new one. Avoid @ : / # in it.")
+        elif "does not exist" in raw or "Name or service not known" in raw:
+            add("Supabase reachable", FAIL, msg,
+                "Check the region in the hostname matches your project.")
+        elif "timeout" in raw.lower():
+            add("Supabase reachable", FAIL, "connection timed out",
+                "The project may be paused — free-tier projects pause after "
+                "~1 week idle. Open the Supabase dashboard to resume it.")
+        else:
+            add("Supabase reachable", FAIL, msg,
+                "Check the password, and that the project is not paused.")
         return out
 
     # 4 -- is there data --------------------------------------------------
