@@ -109,6 +109,41 @@ def is_postgres():
 _PARAM = re.compile(r"\?(?=(?:[^']*'[^']*')*[^']*$)")
 
 
+class Row(dict):
+    """A row that works by name AND by position, like sqlite3.Row.
+
+    psycopg's dict_row returns plain dicts, so row[0] raises KeyError - which is
+    how this first surfaced, as a 500 on every endpoint once a real Postgres
+    connection was in play. Supporting both styles here means call sites never
+    have to care which backend they are talking to.
+    """
+
+    __slots__ = ()
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            try:
+                return list(self.values())[key]
+            except IndexError:
+                raise IndexError(f"row has {len(self)} columns, asked for {key}") from None
+        if isinstance(key, slice):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+    def keys(self):
+        return list(super().keys())
+
+
+def _row_factory(cursor):
+    """psycopg row factory producing Row instances."""
+    cols = [c.name for c in (cursor.description or [])]
+
+    def make(values):
+        return Row(zip(cols, values))
+
+    return make
+
+
 class _PGCursor:
     def __init__(self, cur):
         self._cur = cur
@@ -125,7 +160,7 @@ class _PGCursor:
     @property
     def lastrowid(self):
         row = self._cur.fetchone()
-        return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+        return row["id"] if row else None
 
 
 def pooled(url=None) -> bool:
@@ -137,7 +172,6 @@ def pooled(url=None) -> bool:
 class _PGConnection:
     def __init__(self, dsn):
         import psycopg
-        from psycopg.rows import dict_row
 
         # Supabase requires TLS; add it if the URL does not already say so.
         if "sslmode=" not in dsn and "supabase" in dsn:
@@ -145,7 +179,7 @@ class _PGConnection:
 
         self._conn = psycopg.connect(
             dsn,
-            row_factory=dict_row,
+            row_factory=_row_factory,
             autocommit=False,
             # Transaction-mode pooling rejects prepared statements. Disabling
             # them costs a little planning time and avoids a class of failure
