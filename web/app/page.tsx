@@ -2,62 +2,30 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { LiveStatus } from "@/components/LiveStatus";
-import { api, type Check, type Funnel, type Health, type Retailer, type Settings, type Stats, type Verification } from "@/lib/api";
+import { api, type Funnel, type Retailer, type Settings, type Stats } from "@/lib/api";
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [retailers, setRetailers] = useState<Retailer[]>([]);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
-  const [verification, setVerification] = useState<Verification | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [keyInput, setKeyInput] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-
-  // A catalog scan takes 30-90s. Without a visible counter the button looks
-  // frozen, which reads as a broken product rather than a slow one.
-  useEffect(() => {
-    if (!busy) { setElapsed(0); return; }
-    const t = setInterval(() => setElapsed((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [busy]);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, cfg, r, f, h] = await Promise.all([
-        api.stats(), api.settings(), api.retailers(), api.funnel(), api.health(),
+      const [s, cfg, r, f] = await Promise.all([
+        api.stats(), api.settings(), api.retailers(), api.funnel(),
       ]);
-      setStats(s); setSettings(cfg); setRetailers(r); setFunnel(f); setHealth(h);
-      setError(null);
+      setStats(s); setSettings(cfg); setRetailers(r); setFunnel(f); setError(null);
     } catch (e) {
       const msg = (e as Error).message;
-      // A 503 means the engine IS running and told us what is wrong; only a
-      // network-level failure means it is actually not running.
-      setError(
-        /Failed to fetch|NetworkError|ECONNREFUSED/i.test(msg)
-          ? "The engine is not running.\n\nStart it with:  ./start.sh"
-          : msg
-      );
+      setError(/Failed to fetch|NetworkError|ECONNREFUSED/i.test(msg)
+        ? "The engine is not running.\n\nStart it with:  ./start.sh"
+        : msg);
     }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
-
-  async function run<T>(label: string, fn: () => Promise<T>, after?: (r: T) => string) {
-    setBusy(label); setError(null); setNotice(null);
-    try {
-      const r = await fn();
-      if (after) setNotice(after(r));
-      await refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
 
   if (error && !stats) {
     return (
@@ -72,112 +40,55 @@ export default function Dashboard() {
     );
   }
 
-  const configured = settings?.keepa_configured;
+  const totalDiscounts = funnel?.discounted_in_stock ?? 0;
 
   return (
-    <main style={{ display: "flex", flexDirection: "column", gap: "2rem", paddingTop: "2.5rem" }}>
-      <header style={{ display: "flex", flexDirection: "column", gap: ".5rem" }}>
-        <span className="eyebrow">Control panel</span>
-        <h1 style={{ fontSize: "2.1rem", fontWeight: 700, letterSpacing: "-.015em" }}>
-          Arbitrage Sourcing Engine
+    <main style={{ display: "flex", flexDirection: "column", gap: "1.75rem", paddingTop: "2.5rem" }}>
+      <header style={{ display: "flex", flexDirection: "column", gap: ".4rem" }}>
+        <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-.015em" }}>
+          Sourcing overview
         </h1>
         <p className="muted" style={{ margin: 0, maxWidth: "42em" }}>
-          Scan retailers for discounts, match products to Amazon, and calculate real profit.
+          Discounted products across {stats?.retailers ?? 0} US retailers, matched
+          to Amazon and scored on profit.
         </p>
       </header>
 
-      {/* ---- step 1: the key ---- */}
-      <section className={`card ${configured ? "accent" : "warn"}`}>
-        <div style={{ display: "flex", alignItems: "center", gap: ".75rem", marginBottom: ".6rem" }}>
-          <span className="eyebrow">Step 1 — Amazon data</span>
-          <span className={`pill ${configured ? "PASS" : "WARN"}`}>
-            {configured ? "Connected" : "Not connected"}
-          </span>
+      {!settings?.keepa_configured && (
+        <div className="card warn">
+          <div style={{ display: "flex", alignItems: "center", gap: ".7rem", flexWrap: "wrap" }}>
+            <span className="pill WARN">Amazon data not connected</span>
+            <span className="tiny muted">
+              Profit and ROI figures are estimated until a Keepa key is added.
+            </span>
+            <a href="/settings" className="btn" style={{ marginLeft: "auto", textDecoration: "none" }}>
+              Connect
+            </a>
+          </div>
         </div>
-        {configured ? (
-          <p className="muted tiny" style={{ margin: 0 }}>
-            Keepa key <span className="mono">{settings?.keepa_key_masked}</span> is active.
-            Amazon prices, sales rank history and fees are live.
-          </p>
-        ) : (
-          <>
-            <p className="muted tiny" style={{ marginTop: 0 }}>
-              Without a Keepa key the Amazon figures are <strong>modelled, not real</strong>.
-              Paste your key below — it is validated with Keepa before being saved.
-            </p>
-            <div style={{ display: "flex", gap: ".5rem", flexWrap: "wrap" }}>
-              <input
-                type="password" placeholder="Keepa API key" value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                style={{ flex: "1 1 22rem" }} aria-label="Keepa API key"
-              />
-              <button
-                disabled={keyInput.trim().length < 8 || busy !== null}
-                onClick={() => run("key", () => api.saveKey(keyInput.trim()), () => "Keepa key saved and validated.")}
-              >
-                {busy === "key" ? "Checking…" : "Save & validate"}
-              </button>
-            </div>
-          </>
-        )}
+      )}
+
+      <section className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(9.5rem,1fr))" }}>
+        <Stat label="Retailers" value={stats?.retailers} />
+        <Stat label="Products tracked" value={stats?.products?.toLocaleString()} />
+        <Stat label="On sale now" value={totalDiscounts.toLocaleString()} href="/products?on_sale=true" />
+        <Stat label="Amazon matches" value={stats?.matches?.toLocaleString()} />
+        <Stat label="Price records" value={stats?.price_snapshots?.toLocaleString()} />
       </section>
 
       <LiveStatus />
 
-      {/* ---- stats ---- */}
-      <section className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(9rem,1fr))" }}>
-        {[
-          ["Retailers", stats?.retailers],
-          ["Products", stats?.products?.toLocaleString()],
-          ["Price snapshots", stats?.price_snapshots?.toLocaleString()],
-          ["Amazon matches", stats?.matches],
-          ["Keepa lookups needed", funnel?.keepa_lookups_needed],
-        ].map(([k, v]) => (
-          <div className="stat" key={k as string}>
-            <div className="v">{v ?? "—"}</div>
-            <div className="k">{k as string}</div>
-          </div>
-        ))}
-      </section>
-
-      {/* ---- step 2: verify ---- */}
-      <section className="card">
-        <div style={{ display: "flex", alignItems: "center", gap: ".75rem", flexWrap: "wrap", marginBottom: ".75rem" }}>
-          <span className="eyebrow">Step 2 — Check it works</span>
-          <button className="ghost" disabled={busy !== null}
-                  onClick={() => run("verify", () => api.verify(false), () => "")}>
-            {busy === "verify" ? "Running…" : "Run verification"}
-          </button>
-          {verification && <span className={`pill ${verification.ok ? "PASS" : "FAIL"}`}>{verification.summary}</span>}
+      <section style={{ display: "flex", flexDirection: "column", gap: ".8rem" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: ".75rem" }}>
+          <h2 style={{ fontSize: "1.15rem", fontWeight: 600 }}>Retailers</h2>
+          <a href="/products" className="tiny" style={{ marginLeft: "auto" }}>
+            Browse all products →
+          </a>
         </div>
-        <p className="muted tiny" style={{ marginTop: 0 }}>
-          Tests every stage — configuration, database, retailer connection, Keepa key,
-          Amazon lookup, rank history, fees and ROI — and names the stage that failed.
-        </p>
-        {verification && <VerifyTable checks={verification.checks} />}
-      </section>
-
-      {/* ---- step 3: scan ---- */}
-      <section className="card">
-        <span className="eyebrow">Step 3 — Retailers</span>
-        {health?.scanning_available !== false && (
-          <p className="muted tiny" style={{ margin: ".4rem 0 0" }}>
-            A scan reads the retailer&rsquo;s live catalog and records any price
-            changes. It takes <strong>30&ndash;90 seconds</strong> — the counter
-            shows it is still working.
-          </p>
-        )}
-        {health?.scanning_available === false && (
-          <p className="muted tiny" style={{ margin: ".4rem 0 0" }}>
-            Catalogs refresh automatically every 6 hours. Scans run on a schedule
-            rather than on demand, because a full catalog scan takes longer than a
-            web request is allowed to.
-          </p>
-        )}
-        <div className="tablewrap" style={{ marginTop: ".75rem" }}>
+        <div className="tablewrap">
           <table>
             <thead>
-              <tr><th>Retailer</th><th>Platform</th><th>Tier</th><th>Products</th><th></th></tr>
+              <tr><th>Retailer</th><th>Products</th><th>On sale</th><th>Updated</th></tr>
             </thead>
             <tbody>
               {retailers.map((r) => (
@@ -189,80 +100,35 @@ export default function Dashboard() {
                     </a>
                     <div className="tiny muted mono">{r.host}</div>
                   </td>
-                  <td className="tiny">{r.platform}</td>
-                  <td><span className={`pill ${r.tier === 1 ? "PASS" : r.tier === 4 ? "FAIL" : "WARN"}`}>tier {r.tier}</span></td>
                   <td className="n">
                     <a href={`/products?retailer=${r.slug}`} style={{ color: "var(--accent)" }}>
                       {r.products.toLocaleString()}
                     </a>
                   </td>
-                  <td>
-                    {health?.scanning_available === false ? (
-                      <span className="tiny muted">auto every 6h</span>
-                    ) : (
-                      <button className="ghost" disabled={busy !== null}
-                        onClick={() => run(`scan-${r.slug}`, () => api.ingest(r.slug, 4),
-                          (res) => `${r.name}: ${res.seen} scanned, ${res.new} new, ${res.price_changes} price changes, ${res.on_sale} on sale.`)}>
-                        {busy === `scan-${r.slug}` ? `Scanning… ${elapsed}s` : "Scan"}
-                      </button>
-                    )}
+                  <td className="n">
+                    <a href={`/products?retailer=${r.slug}&on_sale=true`} style={{ color: "var(--accent)" }}>
+                      view
+                    </a>
                   </td>
+                  <td className="tiny muted">every 6 hours</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
-
-      {/* ---- step 4: match ---- */}
-      <section className="card">
-        <div style={{ display: "flex", alignItems: "center", gap: ".75rem", flexWrap: "wrap" }}>
-          <span className="eyebrow">Step 4 — Match to Amazon</span>
-          <button disabled={busy !== null}
-            onClick={() => run("match", () => api.match(25),
-              (m) => `Attempted ${m.attempted}: ${m.auto} auto-accepted, ${m.pending} need review, ${m.rejected} rejected (${m.keepa_mode} mode).`)}>
-            {busy === "match" ? `Matching… ${elapsed}s` : "Match 25 products"}
-          </button>
-          {!configured && <span className="pill WARN">simulation only — no key</span>}
-        </div>
-        {funnel && (
-          <p className="muted tiny" style={{ marginBottom: 0 }}>
-            Only {funnel.keepa_lookups_needed} of {funnel.skus_ingested.toLocaleString()} products need an
-            Amazon lookup — a {funnel.reduction_factor}× reduction, so Keepa tokens go a long way.
-          </p>
-        )}
-      </section>
-
-      {busy && (
-        <div className="card accent tiny" role="status" aria-live="polite">
-          Working… {elapsed}s elapsed. Catalog scans take 30&ndash;90 seconds; the
-          page will update by itself when it finishes.
-        </div>
-      )}
-      {notice && <div className="card accent tiny">{notice}</div>}
-      {error && stats && <div className="card warn tiny mono" style={{ whiteSpace: "pre-wrap" }}>{error}</div>}
     </main>
   );
 }
 
-function VerifyTable({ checks }: { checks: Check[] }) {
-  return (
-    <div className="tablewrap">
-      <table style={{ minWidth: "40rem" }}>
-        <thead><tr><th>Stage</th><th>Result</th><th>Detail</th></tr></thead>
-        <tbody>
-          {checks.map((c) => (
-            <tr key={c.name}>
-              <td><strong>{c.name}</strong></td>
-              <td><span className={`pill ${c.status}`}>{c.status}</span></td>
-              <td className="tiny">
-                {c.detail}
-                {c.fix && <div className="muted" style={{ marginTop: ".2rem" }}>→ {c.fix}</div>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+function Stat({ label, value, href }: { label: string; value?: string | number; href?: string }) {
+  const inner = (
+    <>
+      <div className="v">{value ?? "—"}</div>
+      <div className="k">{label}</div>
+    </>
   );
+  return href
+    ? <a className="stat" href={href} style={{ textDecoration: "none" }}>{inner}</a>
+    : <div className="stat">{inner}</div>;
 }

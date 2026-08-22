@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Arbitrage Sourcing Engine",
+  title: "Sourcing Engine",
   description: "Retail arbitrage lead engine — scan retailers, match to Amazon, compute ROI.",
 };
 
@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/">Dashboard</a>
             <a href="/products">Products</a>
             <a href="/leads">Leads</a>
-            <span style={{ marginLeft: "auto" }} className="eyebrow">Phase 1</span>
+            <a href="/settings" style={{ marginLeft: "auto" }}>Settings</a>
           </div>
         </nav>
         <div className="shell">{children}</div>

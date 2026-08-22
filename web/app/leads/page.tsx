@@ -33,15 +33,15 @@ export default function LeadsPage() {
   return (
     <main style={{ display: "flex", flexDirection: "column", gap: "1.25rem", paddingTop: "2.5rem" }}>
       <header style={{ display: "flex", flexDirection: "column", gap: ".4rem" }}>
-        <span className="eyebrow">{verified ? "Verified against Amazon" : "Modelled projection"}</span>
+        <span className="eyebrow">{verified ? "Verified against Amazon" : "Estimated"}</span>
         <h1 style={{ fontSize: "1.9rem", fontWeight: 700 }}>Leads</h1>
       </header>
 
       {!verified && (
         <div className="card warn tiny">
-          <strong>These ROI figures are modelled, not real.</strong> Retailer prices and
-          discounts are live, but the Amazon price is estimated from the list price.
-          Add a Keepa key and switch to Verified for real numbers.
+          <strong>Profit figures are estimated.</strong> Retailer prices and discounts
+          are live, but the Amazon sale price is inferred rather than looked up.
+          Connect a Keepa key in <a href="/settings">Settings</a> for verified numbers.
         </div>
       )}
 
@@ -49,8 +49,8 @@ export default function LeadsPage() {
         <label className="field">
           <span>Source</span>
           <select value={verified ? "v" : "m"} onChange={(e) => setVerified(e.target.value === "v")}>
-            <option value="m">Modelled</option>
-            <option value="v">Verified (real Amazon data)</option>
+            <option value="m">Estimated</option>
+            <option value="v">Verified</option>
           </select>
         </label>
         <label className="field">
@@ -81,7 +81,7 @@ export default function LeadsPage() {
 
       <p className="muted tiny" style={{ margin: 0 }}>
         {loading ? "Loading…" : `${page?.total ?? 0} leads at ${minRoi}%+ ROI`}
-        {page && !page.modelled && " · real Amazon data"}
+        {page && !page.modelled && " · verified against Amazon"}
       </p>
 
       <div className="tablewrap">
@@ -98,8 +98,8 @@ export default function LeadsPage() {
             {!loading && !page?.items.length && (
               <tr><td colSpan={11} className="muted tiny" style={{ padding: "1.5rem" }}>
                 {verified
-                  ? "No verified leads yet. Add a Keepa key, then run Match to Amazon on the dashboard."
-                  : "No leads at this ROI threshold. Try lowering it, or scan more retailers."}
+                  ? "No verified leads yet — connect a Keepa key in Settings."
+                  : "No leads at this ROI threshold. Try lowering it."}
               </td></tr>
             )}
           </tbody>

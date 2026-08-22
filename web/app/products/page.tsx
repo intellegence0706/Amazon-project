@@ -61,8 +61,7 @@ export default function ProductsPage() {
           {retailers.find((r) => r.slug === retailer)?.name ?? "All products"}
         </h1>
         <p className="muted tiny" style={{ margin: 0 }}>
-          Everything being tracked, discounted or not. Prices are read live from
-          each retailer&rsquo;s own catalog.
+          Live prices from each retailer&rsquo;s catalog.
         </p>
       </header>
 
