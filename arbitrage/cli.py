@@ -267,7 +267,11 @@ def main(argv=None):
         else:
             print("  [local: arbitrage.db]")
 
-    return a.fn(a)
+    try:
+        return a.fn(a)
+    except db.BadDatabaseURL as e:
+        print(f"\n{e}\n")
+        return 1
 
 
 if __name__ == "__main__":

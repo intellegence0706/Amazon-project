@@ -210,8 +210,46 @@ class _PGConnection:
         self._conn.close()
 
 
+class BadDatabaseURL(RuntimeError):
+    pass
+
+
+def check_url(url):
+    """Fail with a readable message rather than a Unicode traceback.
+
+    A malformed DATABASE_URL surfaces deep inside the DNS resolver as
+    "encoding with 'idna' codec failed", which says nothing useful. Checking
+    the shape here costs nothing and turns it into an actionable error.
+    """
+    rest = url.split("://", 1)[-1]
+    hostpart = rest.rsplit("@", 1)[-1].split("/")[0]
+    host = hostpart.rsplit(":", 1)[0] if ":" in hostpart else hostpart
+
+    if "..." in url or url.rstrip("/").endswith("://"):
+        raise BadDatabaseURL(
+            "DATABASE_URL still contains the example placeholder '...'.\n\n"
+            "Use your real Supabase connection string, for example:\n"
+            "  export DATABASE_URL='postgresql://postgres.PROJECTREF:PASSWORD"
+            "@aws-1-REGION.pooler.supabase.com:6543/postgres'")
+
+    if not host or "." not in host:
+        raise BadDatabaseURL(
+            f"DATABASE_URL has no valid host (got {host!r}).\n\n"
+            "Expected: postgresql://USER:PASSWORD@HOST:6543/postgres\n"
+            "Copy the 'Transaction pooler' string from "
+            "Supabase → Settings → Database.")
+
+    if "@" not in rest:
+        raise BadDatabaseURL(
+            "DATABASE_URL has no username or password.\n\n"
+            "Expected: postgresql://USER:PASSWORD@HOST:6543/postgres")
+
+    return True
+
+
 def connect(path=DB_PATH):
     if is_postgres():
+        check_url(database_url())
         return _PGConnection(database_url())
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
