@@ -14,6 +14,7 @@ from .economics import evaluate
 _BASE = """
 SELECT r.slug AS retailer_slug, r.name AS retailer, p.id AS product_id,
        p.title, p.brand, p.url, p.sku, p.upc, p.pack_qty, p.grams, p.image_url,
+       p.delisted_at, p.last_seen,
        s.price, s.list_price, s.in_stock, s.captured_at,
        ROUND(CAST((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100 AS NUMERIC), 1) AS discount_pct
   FROM products p
@@ -71,9 +72,12 @@ def _dedup(rows):
 
 
 def sales(conn, min_discount=15.0, retailer=None, min_price=0.50,
-          max_price=None, in_stock=True, dedup=True, limit=100, offset=0):
+          max_price=None, in_stock=True, dedup=True, limit=100, offset=0,
+          include_delisted=False):
     where = ["s.list_price IS NOT NULL", "s.list_price > s.price",
              "s.price >= ?", "((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100) >= ?"]
+    if not include_delisted:
+        where.append("p.delisted_at IS NULL")
     args = [min_price, min_discount]
     if in_stock:
         where.append("s.in_stock = 1")
@@ -160,7 +164,9 @@ def stats(conn):
 def retailers(conn):
     return [dict(r) for r in conn.execute("""
         SELECT r.slug, r.name, r.host, r.platform, r.tier, r.enabled,
-               COUNT(p.id) AS products
+               r.last_full_scan,
+               SUM(CASE WHEN p.delisted_at IS NULL THEN 1 ELSE 0 END) AS products,
+               SUM(CASE WHEN p.delisted_at IS NOT NULL THEN 1 ELSE 0 END) AS delisted
           FROM retailers r LEFT JOIN products p ON p.retailer_id = r.id
          GROUP BY r.id ORDER BY r.name""")]
 
@@ -190,7 +196,7 @@ def matched_leads(conn, min_roi=30.0, min_profit=0.0, only_auto=True,
                SELECT id FROM price_snapshots
                 WHERE product_id = p.id ORDER BY captured_at DESC LIMIT 1)
          WHERE m.status IN {status} AND a.buybox_price IS NOT NULL
-           AND s.in_stock = 1
+           AND s.in_stock = 1 AND p.delisted_at IS NULL
          ORDER BY m.confidence DESC""").fetchall()
 
     out = []
@@ -269,7 +275,9 @@ def products(conn, retailer=None, q=None, on_sale=None, in_stock=None,
         "product_id": r["product_id"], "retailer": r["retailer"],
         "retailer_slug": r["retailer_slug"], "title": r["title"],
         "brand": r["brand"], "url": r["url"], "sku": r["sku"], "upc": r["upc"],
-        "pack_qty": r["pack_qty"], "image_url": r["image_url"], "price": r["price"],
+        "pack_qty": r["pack_qty"], "image_url": r["image_url"],
+        "delisted_at": r["delisted_at"], "last_seen": r["last_seen"],
+        "price": r["price"],
         "list_price": r["list_price"], "in_stock": bool(r["in_stock"]),
         "discount_pct": r["discount_pct"], "captured_at": r["captured_at"],
     } for r in rows]

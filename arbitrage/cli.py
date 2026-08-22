@@ -30,8 +30,10 @@ def cmd_ingest(a):
     s = ingest.ingest(conn, a.slug, max_pages=a.pages)
     line = (f"{a.slug}: {s['seen']} variants  {s['new']} new  "
             f"{s['price_changes']} price changes  {s['on_sale']} on sale")
-    if s.get("images"):
-        line += f"  {s['images']} images"
+    for key, label in (("images", "images"), ("delisted", "removed"),
+                       ("relisted", "back in stock")):
+        if s.get(key):
+            line += f"  {s[key]} {label}"
     print(line)
 
 
@@ -215,7 +217,10 @@ def main(argv=None):
     p.set_defaults(fn=cmd_add)
 
     p = sub.add_parser("ingest", help="pull catalog + record price changes")
-    p.add_argument("slug"); p.add_argument("--pages", type=int, default=None)
+    p.add_argument("slug")
+    p.add_argument("--pages", type=int, default=None,
+                   help="limit pages; omit for a FULL scan, which also detects "
+                        "products the retailer has removed")
     p.set_defaults(fn=cmd_ingest)
 
     p = sub.add_parser("sales", help="products currently discounted")

@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS retailers (
     host        TEXT NOT NULL,
     platform    TEXT NOT NULL,
     tier        INTEGER NOT NULL,
-    enabled     INTEGER NOT NULL DEFAULT 1
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    last_full_scan TEXT
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS products (
     pack_qty      INTEGER,
     grams         INTEGER,
     image_url     TEXT,
+    delisted_at   TEXT,
     first_seen    TEXT NOT NULL,
     last_seen     TEXT NOT NULL,
     UNIQUE (retailer_id, external_id)
@@ -262,6 +264,8 @@ def connect(path=DB_PATH):
 # add them to a database that already exists, so apply them separately.
 _MIGRATIONS = [
     ("products", "image_url", "TEXT"),
+    ("products", "delisted_at", "TEXT"),
+    ("retailers", "last_full_scan", "TEXT"),
 ]
 
 

@@ -30,6 +30,7 @@ export type Settings = {
 export type Retailer = {
   slug: string; name: string; host: string;
   platform: string; tier: number; enabled: number; products: number;
+  delisted: number; last_full_scan: string | null;
 };
 
 export type Stats = {

@@ -97,6 +97,8 @@ class Retailer(BaseModel):
     tier: int = Field(description="1 open catalog .. 4 needs paid scraping")
     enabled: int
     products: int
+    delisted: int = 0
+    last_full_scan: Optional[str] = None
 
 
 class Sale(BaseModel):

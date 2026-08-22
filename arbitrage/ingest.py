@@ -42,16 +42,24 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
 
     adapter = adapter_cls(r["host"], fetcher or DirectFetcher(), max_pages=max_pages)
     now = _now()
-    stats = {"seen": 0, "new": 0, "price_changes": 0, "on_sale": 0, "images": 0}
+    stats = {"seen": 0, "new": 0, "price_changes": 0, "on_sale": 0, "images": 0,
+             "delisted": 0, "relisted": 0}
+    # Absence only means "removed" when the whole catalog was read. A partial
+    # scan simply has not looked at the rest, and marking those gone would
+    # delete most of the catalog on every short run.
+    full_scan = max_pages is None
 
     # --- one query: every product we already hold for this retailer ---------
-    existing, missing_image = {}, set()
+    existing, missing_image, was_delisted = {}, set(), set()
     for row in conn.execute(
-            "SELECT id, external_id, image_url FROM products WHERE retailer_id=?",
-            (r["id"],)):
+            "SELECT id, external_id, image_url, delisted_at FROM products "
+            "WHERE retailer_id=?", (r["id"],)):
         existing[row["external_id"]] = row["id"]
         if not row["image_url"]:
             missing_image.add(row["id"])
+        if row["delisted_at"]:
+            was_delisted.add(row["id"])
+    unseen = set(existing.values())
 
     # --- one query: the most recent snapshot for each of them --------------
     latest = {
@@ -67,7 +75,7 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
             (r["id"],))
     }
 
-    touched, snapshots, pending_new, image_fixes = [], [], [], []
+    touched, snapshots, pending_new, image_fixes, relisted = [], [], [], [], []
 
     for raw in adapter.products():
         stats["seen"] += 1
@@ -82,6 +90,9 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
             continue
 
         touched.append(pid)
+        unseen.discard(pid)
+        if pid in was_delisted:
+            relisted.append(pid)          # back on sale after being removed
         # Backfill images for products stored before image capture existed.
         if pid in missing_image and raw.image_url:
             image_fixes.append((pid, raw.image_url))
@@ -121,6 +132,25 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
     if image_fixes:
         conn.commit()
         stats["images"] = len(image_fixes)
+
+    # --- removals and returns ---------------------------------------------
+    for chunk in _chunks(relisted, 400):
+        ids = ",".join("?" * len(chunk))
+        conn.execute(
+            f"UPDATE products SET delisted_at = NULL WHERE id IN ({ids})", chunk)
+    stats["relisted"] = len(relisted)
+
+    if full_scan and unseen:
+        # Only mark rows not already marked, so delisted_at stays the date it
+        # first went missing rather than sliding forward on every scan.
+        for chunk in _chunks(sorted(unseen - was_delisted), 400):
+            ids = ",".join("?" * len(chunk))
+            conn.execute(
+                f"UPDATE products SET delisted_at = ? WHERE id IN ({ids})",
+                [now, *chunk])
+            stats["delisted"] += len(chunk)
+        conn.execute("UPDATE retailers SET last_full_scan = ? WHERE id = ?",
+                     (now, r["id"]))
 
     # --- price snapshots, in batches --------------------------------------
     if snapshots:

@@ -88,7 +88,7 @@ export default function Dashboard() {
         <div className="tablewrap">
           <table>
             <thead>
-              <tr><th>Retailer</th><th>Products</th><th>On sale</th><th>Updated</th></tr>
+              <tr><th>Retailer</th><th>Products</th><th>Removed</th><th>On sale</th><th>Updated</th></tr>
             </thead>
             <tbody>
               {retailers.map((r) => (
@@ -106,11 +106,22 @@ export default function Dashboard() {
                     </a>
                   </td>
                   <td className="n">
+                    {r.delisted > 0
+                      ? <span className="muted" title="No longer listed by the retailer">
+                          {r.delisted.toLocaleString()}
+                        </span>
+                      : <span className="muted">—</span>}
+                  </td>
+                  <td className="n">
                     <a href={`/products?retailer=${r.slug}&on_sale=true`} style={{ color: "var(--accent)" }}>
                       view
                     </a>
                   </td>
-                  <td className="tiny muted">every 6 hours</td>
+                  <td className="tiny muted">
+                    {r.last_full_scan
+                      ? `full scan ${r.last_full_scan.slice(0, 10)}`
+                      : "no full scan yet"}
+                  </td>
                 </tr>
               ))}
             </tbody>
