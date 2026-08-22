@@ -34,7 +34,9 @@ def run():
                     "YOURPASSWORD", "PASSWORD", "your_password", "<password>",
                     "REALPW", "REAL_PW", "REALPASSWORD", "PasteYourRealPassword",
                     "yourpassword", "changeme", "xxx", "XXX")
-    userinfo = url.split("@")[0]
+    # rsplit, not split: the host cannot contain '@' but the password can, and
+    # splitting on the first one mis-parses exactly the passwords we want to catch.
+    userinfo = url.rsplit("@", 1)[0]
     if any(ph in userinfo for ph in PLACEHOLDERS):
         add("DATABASE_URL", FAIL, "password is still the example placeholder",
             "Replace it with your real Supabase database password. "
@@ -46,7 +48,21 @@ def run():
             "not part of the value.")
         return out
 
-    add("DATABASE_URL", PASS, f"…@{url.split('@')[-1][:46]}")
+    # Characters that must be percent-encoded inside a connection string.
+    # An unencoded one silently truncates the password, which reads as a
+    # rejected credential rather than a malformed URL.
+    pw = userinfo.split("://", 1)[-1].split(":", 1)[-1] if ":" in userinfo.split("://", 1)[-1] else ""
+    risky = [c for c in "@:/?#[]" if c in pw]
+    if risky:
+        enc = {"@": "%40", ":": "%3A", "/": "%2F", "?": "%3F",
+               "#": "%23", "[": "%5B", "]": "%5D"}
+        add("Password characters", FAIL,
+            f"password contains {' '.join(risky)} — these break the URL",
+            "Either reset the password to letters and numbers only, or encode "
+            "them: " + ", ".join(f"{c} → {enc[c]}" for c in risky))
+        return out
+
+    add("DATABASE_URL", PASS, f"…@{url.rsplit('@', 1)[-1][:46]}")
 
     # 2 -- pooler, not direct ----------------------------------------------
     if db.pooled():
@@ -63,7 +79,14 @@ def run():
     except Exception as e:
         raw = str(e)
         msg = raw.split("\n")[0][:80]
-        if "password authentication failed" in raw:
+        if "reconnect with fresh credentials" in raw or "credentials are invalid" in raw:
+            add("Supabase reachable", FAIL,
+                "the pooler rejected the credentials",
+                "This message comes from Supabase's pooler, not Postgres. If you "
+                "just reset the password, wait 1-2 minutes for the pooler to pick "
+                "it up and try again. If it persists, the password may contain "
+                "characters that need encoding, or was copied with a trailing space.")
+        elif "password authentication failed" in raw:
             add("Supabase reachable", FAIL,
                 "reached the server, but the password was rejected",
                 "The network, region and port are all correct — only the password "
