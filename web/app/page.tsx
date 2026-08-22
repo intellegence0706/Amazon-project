@@ -21,9 +21,13 @@ export default function Dashboard() {
       ]);
       setStats(s); setSettings(cfg); setRetailers(r); setFunnel(f); setError(null);
     } catch (e) {
+      const msg = (e as Error).message;
+      // A 503 means the engine IS running and told us what is wrong; only a
+      // network-level failure means it is actually not running.
       setError(
-        `Cannot reach the engine. Start it with:  python3 -m uvicorn arbitrage.web.api:app --port 8000` +
-        `\n(${(e as Error).message})`
+        /Failed to fetch|NetworkError|ECONNREFUSED/i.test(msg)
+          ? "The engine is not running.\n\nStart it with:  ./start.sh"
+          : msg
       );
     }
   }, []);
@@ -47,7 +51,9 @@ export default function Dashboard() {
     return (
       <main style={{ paddingTop: "3rem" }}>
         <div className="card warn">
-          <h2 style={{ fontSize: "1.2rem", marginBottom: ".5rem" }}>Engine not running</h2>
+          <h2 style={{ fontSize: "1.2rem", marginBottom: ".5rem" }}>
+            {/not running/i.test(error) ? "Engine not running" : "Cannot read the database"}
+          </h2>
           <pre className="mono tiny" style={{ whiteSpace: "pre-wrap", margin: 0 }}>{error}</pre>
         </div>
       </main>

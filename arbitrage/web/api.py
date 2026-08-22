@@ -44,7 +44,33 @@ app.add_middleware(
 
 
 def get_conn():
-    conn = db.init()
+    """Open a connection, or explain clearly why it could not be opened.
+
+    A database misconfiguration used to surface as a bare 500, which the
+    interface reported as "engine not running" - sending you to look in exactly
+    the wrong place. Now the response says what is actually wrong.
+    """
+    try:
+        conn = db.init()
+    except Exception as e:                                   # noqa: BLE001
+        raw = str(e)
+        if not db.is_postgres():
+            detail = f"Cannot open the local database: {raw[:120]}"
+            fix = "Delete arbitrage.db and re-run ingest."
+        elif "password authentication failed" in raw:
+            detail = "DATABASE_URL is set, but Supabase rejected the password."
+            fix = ("Either unset DATABASE_URL to use the local database, or "
+                   "correct the password. Supabase → Settings → Database → "
+                   "Reset database password.")
+        elif "timeout" in raw.lower() or "could not connect" in raw.lower():
+            detail = "DATABASE_URL is set, but the database did not respond."
+            fix = ("The Supabase project may be paused — free-tier projects "
+                   "pause after about a week idle. Open the Supabase dashboard "
+                   "to resume it, or unset DATABASE_URL to work locally.")
+        else:
+            detail = f"Database connection failed: {raw.splitlines()[0][:120]}"
+            fix = "Run: python3 -m arbitrage.cli preflight"
+        raise HTTPException(503, f"{detail}  →  {fix}")
     try:
         yield conn
     finally:
