@@ -14,7 +14,7 @@ from . import config, db, queries
 from .adapters.shopify import ShopifyAdapter
 from .economics import evaluate
 from .fetcher import DirectFetcher
-from .keepa import KeepaClient, KeepaError, fixture_client
+from .keepa import ImplausibleData, KeepaClient, KeepaError, check_plausible, fixture_client
 
 PASS, FAIL, SKIP, WARN = "PASS", "FAIL", "SKIP", "WARN"
 
@@ -122,7 +122,7 @@ def run(live_network=True, keepa_client: Optional[KeepaClient] = None):
 
     # 6 -- Amazon product lookup --------------------------------------------
     try:
-        p = client.by_asin("B00EXAMPLE1" if simulated else "B0BDHWDR12")
+        p = client.by_asin("B00EXAMPLE1" if simulated else "B0BDHWDR12", strict=False)
         if p is None:
             add("Amazon product lookup", FAIL, "no product returned",
                 "Keepa may not have this ASIN. Try another.")
@@ -133,10 +133,26 @@ def run(live_network=True, keepa_client: Optional[KeepaClient] = None):
         add("Amazon product lookup", FAIL, str(e))
         return checks
 
+    # 6b -- do the numbers make sense --------------------------------------
+    # The field names and array indices were taken from documentation, not from
+    # a live response. A wrong index does not raise - it produces a believable
+    # but false price - so check the shape of what came back.
+    problems = check_plausible(p)
+    if problems:
+        add("Amazon data sanity", FAIL, "; ".join(problems)[:110],
+            "Keepa's response format does not match what this code expects. "
+            "Do NOT trust any profit figure until this is fixed. Send this "
+            "message to whoever maintains the integration.")
+        return checks
+    add("Amazon data sanity", PASS,
+        f"price ${p.sale_price}, BSR {p.bsr:,}, {p.offer_count} offers — all plausible"
+        if (p.bsr is not None and p.offer_count is not None)
+        else "values within plausible ranges")
+
     # 7 -- sales rank history ------------------------------------------------
     add("Sales rank history", PASS if p.has_rank_history else WARN,
         f"current BSR {p.bsr:,}, 90-day avg {p.bsr_90d_avg:,}"
-        if p.has_rank_history else "no rank history returned",
+        if (p.has_rank_history and p.bsr is not None) else "no rank history returned",
         "" if p.has_rank_history else "Without rank history you cannot tell whether a product sells.")
 
     # 8 -- fees and ROI ------------------------------------------------------

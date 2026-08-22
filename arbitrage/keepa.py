@@ -69,6 +69,68 @@ class KeepaError(RuntimeError):
     pass
 
 
+class ImplausibleData(KeepaError):
+    """Parsed values that cannot be right.
+
+    The field names and csv indices below follow Keepa's documentation, but this
+    code has never run against a live key. If an index is wrong it will not
+    crash - a sales rank of 8432 read as a price becomes $84.32, ROI is computed
+    from it, and the lead list quietly lies. Refusing implausible values turns a
+    silent wrong answer into a visible failure.
+    """
+
+
+# Ranges a real Amazon listing must fall inside. Deliberately wide: the aim is
+# to catch a mis-parse by an order of magnitude, not to police edge cases.
+PLAUSIBLE = {
+    "price":       (0.01, 25_000),
+    "bsr":         (1, 20_000_000),
+    "offer_count": (0, 5_000),
+    "fba_fee":     (0.50, 300),
+    "referral":    (0.02, 0.50),
+    "grams":       (1, 500_000),
+}
+
+
+def check_plausible(p: "KeepaProduct") -> list:
+    """Return a list of problems. Empty means the parse looks sane."""
+    bad = []
+
+    def rng(name, value, key):
+        if value is None:
+            return
+        lo, hi = PLAUSIBLE[key]
+        if not (lo <= value <= hi):
+            bad.append(f"{name}={value} outside plausible {lo}-{hi}")
+
+    rng("buybox_price", p.buybox_price, "price")
+    rng("amazon_price", p.amazon_price, "price")
+    rng("new_price", p.new_price, "price")
+    rng("bsr", p.bsr, "bsr")
+    rng("bsr_90d_avg", p.bsr_90d_avg, "bsr")
+    rng("offer_count", p.offer_count, "offer_count")
+    rng("fba_fee", p.fba_fee, "fba_fee")
+    rng("referral_pct", p.referral_pct, "referral")
+    rng("weight_grams", p.weight_grams, "grams")
+
+    # A fee larger than the item it is charged on means the columns are crossed.
+    if p.fba_fee and p.sale_price and p.fba_fee > p.sale_price * 2:
+        bad.append(f"fba_fee {p.fba_fee} exceeds twice the sale price {p.sale_price}")
+
+    # Prices and ranks living in the same array is where a wrong index shows up.
+    if p.bsr and p.buybox_price and abs(p.bsr / 100 - p.buybox_price) < 0.01:
+        bad.append("buybox_price looks like the sales rank divided by 100 "
+                   "- csv index is probably wrong")
+
+    # A shifted index can land on empty slots and yield nothing at all. Keepa
+    # returning a product with no price whatsoever is not a normal outcome.
+    if p.asin and p.sale_price is None and p.bsr is None:
+        bad.append("no price and no sales rank returned - the response format "
+                   "does not match what this code reads")
+
+    return bad
+
+
 def parse_product(p: dict) -> KeepaProduct:
     """Defensive parse - every field optional, nothing raises on a missing key."""
     stats = p.get("stats") or {}
@@ -138,10 +200,21 @@ class KeepaClient:
         data = self._call("token")
         return data.get("tokensLeft")
 
-    def by_asin(self, asin, stats_days=90) -> Optional[KeepaProduct]:
+    def by_asin(self, asin, stats_days=90, strict=True) -> Optional[KeepaProduct]:
         data = self._call("product", asin=asin, stats=stats_days, buybox=1)
         items = data.get("products") or []
-        return parse_product(items[0]) if items else None
+        if not items:
+            return None
+        product = parse_product(items[0])
+        if strict:
+            problems = check_plausible(product)
+            if problems:
+                raise ImplausibleData(
+                    f"Keepa returned values that cannot be right for {asin}: "
+                    + "; ".join(problems)
+                    + ". The response format has probably changed - do not trust "
+                      "any profit figures until this is resolved.")
+        return product
 
     def search(self, term, stats_days=90) -> List[KeepaProduct]:
         """Keyword search - candidate generation for fuzzy matching.
@@ -152,10 +225,16 @@ class KeepaClient:
         data = self._call("search", type="product", term=term, stats=stats_days)
         return [parse_product(p) for p in (data.get("products") or [])]
 
-    def by_upc(self, upc, stats_days=90) -> List[KeepaProduct]:
+    def by_upc(self, upc, stats_days=90, strict=True) -> List[KeepaProduct]:
         """UPC/EAN lookup - the high-precision matching path."""
         data = self._call("product", code=str(upc).strip(), stats=stats_days, buybox=1)
-        return [parse_product(p) for p in (data.get("products") or [])]
+        out = []
+        for raw in (data.get("products") or []):
+            product = parse_product(raw)
+            if strict and check_plausible(product):
+                continue          # skip the bad row rather than failing the batch
+            out.append(product)
+        return out
 
 
 # A recorded-shape response so the full chain runs with no key and no network.
