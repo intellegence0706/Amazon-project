@@ -24,8 +24,11 @@ class DirectFetcher:
     """Plain HTTP. Free. Works for tier-1 and tier-2 retailers."""
 
     name = "direct"
+    # 0.25s between requests. Platform catalog endpoints (/products.json and
+    # friends) are public, cached and built for volume, so this is courteous
+    # rather than cautious. Raise it for any retailer that starts rate-limiting.
 
-    def __init__(self, delay=0.7, timeout=20, retries=2):
+    def __init__(self, delay=0.25, timeout=20, retries=2):
         self.delay, self.timeout, self.retries = delay, timeout, retries
         self._last = 0.0
 

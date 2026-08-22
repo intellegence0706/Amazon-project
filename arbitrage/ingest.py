@@ -65,7 +65,7 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
             (r["id"],))
     }
 
-    touched, snapshots = [], []
+    touched, snapshots, pending_new = [], [], []
 
     for raw in adapter.products():
         stats["seen"] += 1
@@ -74,37 +74,40 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
 
         pid = existing.get(raw.external_id)
         if pid is None:
-            pid = conn.execute(
-                """INSERT INTO products (retailer_id, external_id, url, title, brand,
-                       sku, upc, pack_qty, grams, first_seen, last_seen)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
-                (r["id"], raw.external_id, raw.url, raw.title, raw.brand, raw.sku,
-                 raw.upc, raw.pack_qty, raw.grams, now, now),
-            ).fetchone()[0]
-            existing[raw.external_id] = pid
+            # Buffered: inserted in batches once the catalog is fully read.
+            pending_new.append(raw)
             stats["new"] += 1
-        else:
-            touched.append(pid)
+            continue
 
+        touched.append(pid)
         prev = latest.get(pid)
-        changed = (
-            prev is None
-            or prev[0] != raw.price
-            or prev[1] != raw.list_price
-            or bool(prev[2]) != raw.in_stock
-        )
-        if changed:
+        if _changed(prev, raw):
             snapshots.append((pid, raw.price, raw.list_price, int(raw.in_stock), now))
             stats["price_changes"] += 1
 
-    # --- write only what moved --------------------------------------------
-    for chunk in _chunks(snapshots, 500):
-        for row in chunk:
-            conn.execute(
-                """INSERT INTO price_snapshots
-                       (product_id, price, list_price, in_stock, captured_at)
-                   VALUES (?,?,?,?,?)""", row)
-        conn.commit()
+    # --- new products, in batches -----------------------------------------
+    if pending_new:
+        returned = _insert_many(
+            conn, "products",
+            ["retailer_id", "external_id", "url", "title", "brand", "sku",
+             "upc", "pack_qty", "grams", "first_seen", "last_seen"],
+            [(r["id"], p.external_id, p.url, p.title, p.brand, p.sku, p.upc,
+              p.pack_qty, p.grams, now, now) for p in pending_new],
+            returning="id, external_id")
+        # Map by external_id rather than trusting row order.
+        new_ids = {row["external_id"]: row["id"] for row in returned}
+        by_ext = {p.external_id: p for p in pending_new}
+        for ext, pid in new_ids.items():
+            raw = by_ext[ext]
+            snapshots.append((pid, raw.price, raw.list_price, int(raw.in_stock), now))
+            stats["price_changes"] += 1
+
+    # --- price snapshots, in batches --------------------------------------
+    if snapshots:
+        _insert_many(conn, "price_snapshots",
+                     ["product_id", "price", "list_price", "in_stock", "captured_at"],
+                     snapshots)
+    conn.commit()
 
     # last_seen is bookkeeping, not data - one statement for the whole batch.
     for chunk in _chunks(touched, 500):
@@ -116,6 +119,37 @@ def ingest(conn, slug, fetcher=None, max_pages=None):
     return stats
 
 
+def _changed(prev, raw):
+    return (prev is None
+            or prev[0] != raw.price
+            or prev[1] != raw.list_price
+            or bool(prev[2]) != raw.in_stock)
+
+
 def _chunks(seq, n):
     for i in range(0, len(seq), n):
         yield seq[i:i + n]
+
+
+def _insert_many(conn, table, columns, rows, returning=None, chunk=400):
+    """One statement per chunk, not one per row.
+
+    Multi-row VALUES is portable to SQLite and Postgres alike, and turns N
+    network round trips into N/400. Against a remote database that is the whole
+    difference between seconds and minutes.
+
+    Chunk size keeps the parameter count well under Postgres' 65535 limit.
+    """
+    cols = ",".join(columns)
+    width = len(columns)
+    out = []
+    for part in _chunks(rows, chunk):
+        values = ",".join(f"({','.join('?' * width)})" for _ in part)
+        sql = f"INSERT INTO {table} ({cols}) VALUES {values}"
+        if returning:
+            sql += f" RETURNING {returning}"
+        flat = [v for row in part for v in row]
+        cur = conn.execute(sql, flat)
+        if returning:
+            out.extend(cur.fetchall())
+    return out
