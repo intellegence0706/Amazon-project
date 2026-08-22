@@ -1,0 +1,120 @@
+name: Refresh retailer data
+
+# Serverless functions cannot run long scans, so scanning happens here instead.
+# This writes STRAIGHT to Supabase - no local database, no migrate step.
+on:
+  schedule:
+    - cron: "0 */6 * * *"      # every 6 hours (UTC)
+  workflow_dispatch:            # and a manual "Run workflow" button
+    inputs:
+      pages:
+        description: "Catalog pages per retailer"
+        default: "4"
+      match:
+        description: "Also match against Amazon (needs Keepa key)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: refresh                # never let two scans overlap
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+      PAGES: ${{ github.event.inputs.pages || '4' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install --quiet "psycopg[binary]>=3.1"
+
+      - name: Check the database is reachable
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          from arbitrage import db
+          if not db.is_postgres():
+              sys.exit("DATABASE_URL secret is not set or is not a Postgres URL")
+          if not db.pooled():
+              print("::warning::Not using the transaction pooler (port 6543)")
+          conn = db.init()
+          n = conn.execute("SELECT COUNT(*) AS c FROM products").fetchone()["c"]
+          print(f"connected — {n:,} products currently stored")
+          PY
+
+      # A fresh database has no retailers, so ingest would fail with "unknown
+      # retailer". Registering is idempotent, so this is safe on every run.
+      - name: Register retailers
+        run: |
+          python3 - <<'PY'
+          from arbitrage import db, ingest
+          conn = db.init()
+          for slug, host, name in [
+              ("vitacost",   "www.vitacost.com",       "Vitacost"),
+              ("brooklinen", "www.brooklinen.com",     "Brooklinen"),
+              ("swanson",    "www.swansonvitamins.com","Swanson Vitamins"),
+              ("pipingrock", "www.pipingrock.com",     "Piping Rock"),
+              ("grove",      "www.grove.co",           "Grove Collaborative"),
+          ]:
+              ingest.register(conn, slug, name, host, "shopify", tier=1)
+          print("retailers registered")
+          PY
+
+      # Each retailer is its own step so one failure does not hide the others.
+      # continue-on-error: a retailer changing its site should not stop the rest.
+      - name: Scan Vitacost
+        continue-on-error: true
+        run: python3 -m arbitrage.cli ingest vitacost --pages $PAGES
+
+      - name: Scan Brooklinen
+        continue-on-error: true
+        run: python3 -m arbitrage.cli ingest brooklinen --pages $PAGES
+
+      - name: Scan Swanson
+        continue-on-error: true
+        run: python3 -m arbitrage.cli ingest swanson --pages $PAGES
+
+      - name: Scan Piping Rock
+        continue-on-error: true
+        run: python3 -m arbitrage.cli ingest pipingrock --pages $PAGES
+
+      - name: Scan Grove
+        continue-on-error: true
+        run: python3 -m arbitrage.cli ingest grove --pages $PAGES
+
+      - name: Match against Amazon
+        # Scheduled runs match automatically when a key exists; manual runs
+        # only when the box is ticked, so a token budget is never spent by surprise.
+        if: ${{ env.KEEPA_API_KEY != '' && (github.event_name == 'schedule' || github.event.inputs.match == 'true') }}
+        continue-on-error: true
+        run: python3 -m arbitrage.cli match --limit 50
+
+      - name: Summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> $GITHUB_STEP_SUMMARY
+          from arbitrage import db, queries
+          conn = db.init()
+          s = queries.stats(conn)
+          n, _ = queries.sales(conn, min_discount=15, limit=1)
+          print("## Refresh complete\n")
+          print(f"- **{s['products']:,}** products across **{s['retailers']}** retailers")
+          print(f"- **{s['price_snapshots']:,}** price snapshots")
+          print(f"- **{n}** products currently discounted 15%+")
+          print(f"- **{s['matches']}** Amazon matches")
+          print(f"\nLast scan: `{s['last_scan']}`")
+          for r in queries.retailers(conn):
+              print(f"  - {r['name']}: {r['products']:,} products")
+          PY
