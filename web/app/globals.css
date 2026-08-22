@@ -115,3 +115,24 @@ td a:hover { color:var(--accent); text-decoration:underline; }
 
 .muted { color:var(--ink-mid); }
 .tiny  { font-size:.82rem; }
+
+/* ---------- pagination ---------- */
+.pager {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: .9rem 1rem; background: var(--surface);
+  border: 1px solid var(--line-soft); border-radius: 4px;
+}
+.pager-count { font-size: .82rem; color: var(--ink-mid); white-space: nowrap; }
+.pager-buttons { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; margin: 0 auto; }
+.pager-buttons button {
+  min-width: 2.1rem; padding: .35rem .5rem; font-size: .85rem;
+  font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+}
+.pager-buttons button[aria-current="page"] { cursor: default; }
+.pager-gap { color: var(--ink-soft); padding: 0 .15rem; font-size: .85rem; }
+.pager-size { display: flex; align-items: center; gap: .45rem; white-space: nowrap; }
+.pager-size select { padding: .3rem .45rem; font-size: .85rem; }
+@media (max-width: 40rem) {
+  .pager { justify-content: center; }
+  .pager-count, .pager-size { width: 100%; justify-content: center; }
+}

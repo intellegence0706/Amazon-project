@@ -262,7 +262,7 @@ def products(conn, retailer=None, q=None, on_sale=None, in_stock=None,
 
     rows = conn.execute(
         f"""{_BASE} WHERE {clause}
-             ORDER BY discount_pct DESC NULLS LAST, p.title
+             ORDER BY discount_pct DESC NULLS LAST, p.title, p.id
              LIMIT ? OFFSET ?""", [*args, limit, offset]).fetchall()
 
     return total, [{

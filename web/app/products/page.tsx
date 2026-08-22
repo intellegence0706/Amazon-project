@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, type Product, type ProductPage, type Retailer } from "@/lib/api";
-
-const PAGE = 100;
+import { Pagination } from "@/components/Pagination";
 
 export default function ProductsPage() {
   const [retailer, setRetailer] = useState("");
@@ -11,6 +10,9 @@ export default function ProductsPage() {
   const [onSale, setOnSale] = useState<"" | "yes" | "no">("");
   const [inStock, setInStock] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
+  // Typing should not fire a request per keystroke.
+  const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState<ProductPage | null>(null);
   const [retailers, setRetailers] = useState<Retailer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,25 +25,30 @@ export default function ProductsPage() {
     api.retailers().then(setRetailers).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       setPage(await api.products({
         retailer: retailer || undefined,
-        q: query.trim() || undefined,
+        q: debounced || undefined,
         on_sale: onSale === "" ? undefined : onSale === "yes",
         in_stock: inStock ? true : undefined,
-        limit: PAGE, offset,
+        limit: pageSize, offset,
       }));
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [retailer, query, onSale, inStock, offset]);
+  }, [retailer, debounced, onSale, inStock, offset, pageSize]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setOffset(0); }, [retailer, query, onSale, inStock]);
+  useEffect(() => { setOffset(0); }, [retailer, debounced, onSale, inStock]);
 
   const total = page?.total ?? 0;
   const shown = page?.items.length ?? 0;
@@ -94,8 +101,10 @@ export default function ProductsPage() {
 
       <p className="muted tiny" style={{ margin: 0 }}>
         {loading ? "Loading…" : `${total.toLocaleString()} products`}
-        {total > PAGE && ` · showing ${offset + 1}–${offset + shown}`}
       </p>
+
+      <Pagination total={total} offset={offset} pageSize={pageSize}
+                  onOffset={setOffset} onPageSize={setPageSize} />
 
       <div className="tablewrap">
         <table>
@@ -116,15 +125,8 @@ export default function ProductsPage() {
         </table>
       </div>
 
-      {total > PAGE && (
-        <div style={{ display: "flex", gap: ".6rem", alignItems: "center" }}>
-          <button className="ghost" disabled={offset === 0 || loading}
-                  onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
-          <button className="ghost" disabled={offset + PAGE >= total || loading}
-                  onClick={() => setOffset(offset + PAGE)}>Next</button>
-          <span className="muted tiny">page {Math.floor(offset / PAGE) + 1} of {Math.ceil(total / PAGE)}</span>
-        </div>
-      )}
+      <Pagination total={total} offset={offset} pageSize={pageSize}
+                  onOffset={setOffset} onPageSize={setPageSize} />
     </main>
   );
 }
