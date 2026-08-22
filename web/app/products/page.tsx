@@ -134,13 +134,14 @@ function Row({ p }: { p: Product }) {
   const band = d >= 50 ? "FAIL" : d >= 30 ? "WARN" : "PASS";
   return (
     <tr>
-      <td style={{ width: "3.5rem" }}>
+      <td style={{ width: "5.5rem" }}>
         {p.image_url ? (
-          <img src={p.image_url} alt="" loading="lazy" width={44} height={44}
-               style={{ width: 44, height: 44, objectFit: "contain",
-                        borderRadius: 3, background: "var(--surface-alt)" }} />
+          <img src={p.image_url} alt="" loading="lazy" width={76} height={76}
+               style={{ width: 76, height: 76, objectFit: "contain",
+                        borderRadius: 4, background: "var(--surface-alt)",
+                        border: "1px solid var(--line-soft)", padding: 2 }} />
         ) : (
-          <div aria-hidden style={{ width: 44, height: 44, borderRadius: 3,
+          <div aria-hidden style={{ width: 76, height: 76, borderRadius: 4,
                  background: "var(--surface-alt)", border: "1px solid var(--line-soft)" }} />
         )}
       </td>

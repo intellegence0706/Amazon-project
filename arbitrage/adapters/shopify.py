@@ -74,9 +74,12 @@ class ShopifyAdapter(Adapter):
             )
 
 
-def _thumb(url, width=160):
-    """Shopify serves resized variants via a query parameter - ask for a small
-    one rather than shipping full-resolution images into a table view."""
+def _thumb(url, width=240):
+    """Shopify serves resized variants via a query parameter - ask for a modest
+    one rather than shipping full-resolution images into a table view.
+
+    240px covers a 76px thumbnail at 3x device pixel ratio without being large.
+    """
     if not url:
         return None
     sep = "&" if "?" in url else "?"
