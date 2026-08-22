@@ -206,9 +206,27 @@ thead th {
   background: var(--surface-alt); border-bottom: 1px solid var(--line);
 }
 /* Sticky is opt-in: worth it on a long product list, pointless on a five-row
-   table and a source of exactly the bug above. */
-.tablewrap.sticky { overflow-y: visible; }
-.tablewrap.sticky thead th { position: sticky; top: 3.5rem; z-index: 2; }
+   table.
+
+   The container scrolls on BOTH axes (a scrolling overflow-x forces overflow-y
+   to compute as auto), so the header must stick to the CONTAINER's top edge -
+   top: 0, not an offset meant to clear the page nav. An offset here is pure
+   overlap and hides the first row.
+
+   Giving the container a height is what makes sticky meaningful: the table
+   scrolls inside it while the header stays put. */
+.tablewrap.sticky {
+  max-height: calc(100vh - 13rem);
+  overflow: auto;
+}
+.tablewrap.sticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* An opaque background is required: rows scroll underneath it. */
+  background: var(--surface-alt);
+  box-shadow: 0 1px 0 var(--line);
+}
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background .1s; }
 tbody tr:hover { background: var(--accent-soft); }
