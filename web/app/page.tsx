@@ -14,6 +14,15 @@ export default function Dashboard() {
   const [keyInput, setKeyInput] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  // A catalog scan takes 30-90s. Without a visible counter the button looks
+  // frozen, which reads as a broken product rather than a slow one.
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return; }
+    const t = setInterval(() => setElapsed((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
 
   const refresh = useCallback(async () => {
     try {
@@ -148,6 +157,13 @@ export default function Dashboard() {
       {/* ---- step 3: scan ---- */}
       <section className="card">
         <span className="eyebrow">Step 3 — Retailers</span>
+        {health?.scanning_available !== false && (
+          <p className="muted tiny" style={{ margin: ".4rem 0 0" }}>
+            A scan reads the retailer&rsquo;s live catalog and records any price
+            changes. It takes <strong>30&ndash;90 seconds</strong> — the counter
+            shows it is still working.
+          </p>
+        )}
         {health?.scanning_available === false && (
           <p className="muted tiny" style={{ margin: ".4rem 0 0" }}>
             Catalogs refresh automatically every 6 hours. Scans run on a schedule
@@ -174,7 +190,7 @@ export default function Dashboard() {
                       <button className="ghost" disabled={busy !== null}
                         onClick={() => run(`scan-${r.slug}`, () => api.ingest(r.slug, 4),
                           (res) => `${r.name}: ${res.seen} scanned, ${res.new} new, ${res.price_changes} price changes, ${res.on_sale} on sale.`)}>
-                        {busy === `scan-${r.slug}` ? "Scanning…" : "Scan"}
+                        {busy === `scan-${r.slug}` ? `Scanning… ${elapsed}s` : "Scan"}
                       </button>
                     )}
                   </td>
@@ -192,7 +208,7 @@ export default function Dashboard() {
           <button disabled={busy !== null}
             onClick={() => run("match", () => api.match(25),
               (m) => `Attempted ${m.attempted}: ${m.auto} auto-accepted, ${m.pending} need review, ${m.rejected} rejected (${m.keepa_mode} mode).`)}>
-            {busy === "match" ? "Matching…" : "Match 25 products"}
+            {busy === "match" ? `Matching… ${elapsed}s` : "Match 25 products"}
           </button>
           {!configured && <span className="pill WARN">simulation only — no key</span>}
         </div>
@@ -204,6 +220,12 @@ export default function Dashboard() {
         )}
       </section>
 
+      {busy && (
+        <div className="card accent tiny" role="status" aria-live="polite">
+          Working… {elapsed}s elapsed. Catalog scans take 30&ndash;90 seconds; the
+          page will update by itself when it finishes.
+        </div>
+      )}
       {notice && <div className="card accent tiny">{notice}</div>}
       {error && stats && <div className="card warn tiny mono" style={{ whiteSpace: "pre-wrap" }}>{error}</div>}
     </main>
