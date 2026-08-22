@@ -254,6 +254,16 @@ def main(argv=None):
     p.set_defaults(fn=cmd_verify)
 
     a = ap.parse_args(argv)
+
+    # Say which database every command is about to touch. Losing track of this
+    # is the easiest mistake to make and the hardest to notice.
+    if a.cmd not in ("fingerprint",):
+        if db.is_postgres():
+            host = db.database_url().rsplit("@", 1)[-1].split("/")[0]
+            print(f"  [remote: {host}]")
+        else:
+            print("  [local: arbitrage.db]")
+
     return a.fn(a)
 
 
