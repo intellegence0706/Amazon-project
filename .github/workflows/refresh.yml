@@ -4,12 +4,17 @@ name: Refresh retailer data
 # This writes STRAIGHT to Supabase - no local database, no migrate step.
 on:
   schedule:
-    - cron: "0 */6 * * *"      # every 6 hours (UTC)
-  workflow_dispatch:            # and a manual "Run workflow" button
+    # Frequent partial scans keep prices current cheaply.
+    - cron: "0 2,8,14,20 * * *"
+    # One full scan a day. Only a full scan can tell that a retailer has
+    # REMOVED a product - a partial scan simply has not looked at the rest.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
     inputs:
-      pages:
-        description: "Catalog pages per retailer"
-        default: "4"
+      full:
+        description: "Full scan (detects removed products, slower)"
+        type: boolean
+        default: false
       match:
         description: "Also match against Amazon (needs Keepa key)"
         type: boolean
@@ -27,7 +32,11 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-      PAGES: ${{ github.event.inputs.pages || '4' }}
+      # The 03:30 schedule and a ticked "full" box run a complete scan;
+      # everything else stays partial.
+      FULL: >-
+        ${{ github.event.schedule == '30 3 * * *'
+            || github.event.inputs.full == 'true' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -74,25 +83,27 @@ jobs:
 
       # Each retailer is its own step so one failure does not hide the others.
       # continue-on-error: a retailer changing its site should not stop the rest.
-      - name: Scan Vitacost
+      # Each retailer is its own step so one failure does not hide the others.
+      - name: Scan retailers
         continue-on-error: true
-        run: python3 -m arbitrage.cli ingest vitacost --pages $PAGES
-
-      - name: Scan Brooklinen
-        continue-on-error: true
-        run: python3 -m arbitrage.cli ingest brooklinen --pages $PAGES
-
-      - name: Scan Swanson
-        continue-on-error: true
-        run: python3 -m arbitrage.cli ingest swanson --pages $PAGES
-
-      - name: Scan Piping Rock
-        continue-on-error: true
-        run: python3 -m arbitrage.cli ingest pipingrock --pages $PAGES
-
-      - name: Scan Grove
-        continue-on-error: true
-        run: python3 -m arbitrage.cli ingest grove --pages $PAGES
+        run: |
+          if [ "$FULL" = "true" ]; then
+            ARGS=""
+            echo "::notice::Full scan - will detect removed products"
+          else
+            ARGS="--pages 4"
+            echo "::notice::Partial scan - prices only, removals not checked"
+          fi
+          FAILED=0
+          for r in vitacost brooklinen swanson pipingrock grove; do
+            echo "--- $r ---"
+            python3 -m arbitrage.cli ingest "$r" $ARGS || {
+              echo "::warning::$r failed"; FAILED=$((FAILED+1)); }
+          done
+          # One broken retailer should not fail the run; all five should.
+          if [ "$FAILED" -ge 5 ]; then
+            echo "::error::every retailer failed"; exit 1
+          fi
 
       - name: Match against Amazon
         # Scheduled runs match automatically when a key exists; manual runs
@@ -115,6 +126,9 @@ jobs:
           print(f"- **{n}** products currently discounted 15%+")
           print(f"- **{s['matches']}** Amazon matches")
           print(f"\nLast scan: `{s['last_scan']}`")
+          print(f"\n| Retailer | Products | Removed | Last full scan |")
+          print("|---|---|---|---|")
           for r in queries.retailers(conn):
-              print(f"  - {r['name']}: {r['products']:,} products")
+              full = (r['last_full_scan'] or '-')[:10]
+              print(f"| {r['name']} | {r['products']:,} | {r['delisted'] or 0} | {full} |")
           PY

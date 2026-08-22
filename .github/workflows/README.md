@@ -29,13 +29,19 @@ actually moved.
 
 ## Schedule
 
-Every 6 hours. Change the cron line to adjust:
+Two schedules, doing different jobs:
 
-```yaml
-- cron: "0 */6 * * *"     # every 6 hours
-- cron: "0 */2 * * *"     # every 2 hours
-- cron: "0 8 * * *"       # once daily at 08:00 UTC
-```
+| Cron | What | Why |
+|---|---|---|
+| `0 2,8,14,20 * * *` | Partial scan, 4× daily | Keeps prices current, cheaply |
+| `30 3 * * *` | **Full** scan, once daily | Only a full scan can detect that a retailer has **removed** a product |
+
+The distinction matters. A partial scan reads the first few catalog pages, so
+anything it does not see is simply unread, not gone. If absence were treated as
+removal there, every short run would wipe most of the catalog. So only the full
+scan marks removals; the partial ones never do.
+
+A manual run is partial unless you tick **Full scan** in the dialog.
 
 ## Cost
 
