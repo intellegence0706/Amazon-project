@@ -37,7 +37,7 @@ def cmd_sales(a):
     rows = conn.execute(
         """SELECT r.name AS retailer, p.title, p.brand, p.pack_qty, p.url,
                   s.price, s.list_price,
-                  ROUND((s.list_price - s.price) / s.list_price * 100, 1) AS disc
+                  ROUND(CAST((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100 AS NUMERIC), 1) AS disc
              FROM products p
              JOIN retailers r ON r.id = p.retailer_id
              JOIN price_snapshots s ON s.id = (
@@ -47,7 +47,7 @@ def cmd_sales(a):
               AND s.list_price > s.price
               AND s.price >= 0.50
               AND s.in_stock = 1
-              AND ((s.list_price - s.price) / s.list_price * 100) >= ?
+              AND ((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100) >= ?
             ORDER BY disc DESC LIMIT ?""",
         (a.min_discount, a.limit),
     ).fetchall()

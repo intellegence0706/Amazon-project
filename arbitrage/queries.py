@@ -15,7 +15,7 @@ _BASE = """
 SELECT r.slug AS retailer_slug, r.name AS retailer, p.id AS product_id,
        p.title, p.brand, p.url, p.sku, p.upc, p.pack_qty, p.grams,
        s.price, s.list_price, s.in_stock, s.captured_at,
-       ROUND((s.list_price - s.price) / s.list_price * 100, 1) AS discount_pct
+       ROUND(CAST((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100 AS NUMERIC), 1) AS discount_pct
   FROM products p
   JOIN retailers r ON r.id = p.retailer_id
   JOIN price_snapshots s ON s.id = (
@@ -73,7 +73,7 @@ def _dedup(rows):
 def sales(conn, min_discount=15.0, retailer=None, min_price=0.50,
           max_price=None, in_stock=True, dedup=True, limit=100, offset=0):
     where = ["s.list_price IS NOT NULL", "s.list_price > s.price",
-             "s.price >= ?", "((s.list_price - s.price) / s.list_price * 100) >= ?"]
+             "s.price >= ?", "((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100) >= ?"]
     args = [min_price, min_discount]
     if in_stock:
         where.append("s.in_stock = 1")
@@ -179,7 +179,7 @@ def matched_leads(conn, min_roi=30.0, min_profit=0.0, only_auto=True,
         SELECT r.name AS retailer, r.slug AS retailer_slug, p.id AS product_id,
                p.title, p.brand, p.url, p.pack_qty, p.grams,
                s.price, s.list_price, s.captured_at,
-               ROUND((s.list_price - s.price) / s.list_price * 100, 1) AS discount_pct,
+               ROUND(CAST((s.list_price - s.price) / NULLIF(s.list_price, 0) * 100 AS NUMERIC), 1) AS discount_pct,
                a.asin, a.buybox_price, a.offer_count, a.amazon_on_listing, a.bsr,
                a.fba_fee, a.referral_pct, a.category, m.confidence, m.method
           FROM matches m
