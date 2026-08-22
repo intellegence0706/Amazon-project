@@ -132,7 +132,7 @@ export default function ProductsPage() {
 
 function Row({ p }: { p: Product }) {
   const d = p.discount_pct ?? 0;
-  const band = d >= 50 ? "FAIL" : d >= 30 ? "WARN" : "PASS";
+  const band = d >= 50 ? "hot" : d >= 25 ? "warm" : "mild";
   return (
     <tr>
       <td style={{ width: "5.5rem" }}>
@@ -157,8 +157,8 @@ function Row({ p }: { p: Product }) {
       <td className="n">{p.pack_qty ?? "—"}</td>
       <td className="n"><strong>${p.price.toFixed(2)}</strong></td>
       <td className="n was">{p.list_price ? `$${p.list_price.toFixed(2)}` : "—"}</td>
-      <td className="n">{d > 0 ? <span className={`pill ${band}`}>{d.toFixed(0)}%</span> : <span className="muted">—</span>}</td>
-      <td className="n">{p.in_stock ? <span className="pill PASS">yes</span> : <span className="pill SKIP">no</span>}</td>
+      <td className="n">{d > 0 ? <span className={`disc ${band}`}>{d.toFixed(0)}%</span> : <span className="muted">—</span>}</td>
+      <td className="n">{p.in_stock ? <span className="pill PASS">in stock</span> : <span className="pill SKIP">out</span>}</td>
       <td className="n tiny muted">{p.captured_at.slice(0, 10)}</td>
     </tr>
   );

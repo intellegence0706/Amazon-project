@@ -110,7 +110,7 @@ export default function LeadsPage() {
 }
 
 function Row({ l }: { l: Lead }) {
-  const band = l.discount_pct >= 50 ? "FAIL" : l.discount_pct >= 30 ? "WARN" : "PASS";
+  const band = l.discount_pct >= 50 ? "hot" : l.discount_pct >= 25 ? "warm" : "mild";
   return (
     <tr>
       <td className="tiny muted">{l.retailer}</td>
@@ -122,11 +122,11 @@ function Row({ l }: { l: Lead }) {
       <td className="n">{l.pack_qty ?? "—"}</td>
       <td className="n">${l.price.toFixed(2)}</td>
       <td className="n was">${l.list_price.toFixed(2)}</td>
-      <td className="n"><span className={`pill ${band}`}>{l.discount_pct.toFixed(0)}%</span></td>
+      <td className="n"><span className={`disc ${band}`}>{l.discount_pct.toFixed(0)}%</span></td>
       <td className="n">${l.amazon_price.toFixed(2)}</td>
       <td className="n muted">${(l.referral_fee + l.fba_fee).toFixed(2)}</td>
       <td className="n"><strong>${l.net_profit.toFixed(2)}</strong></td>
-      <td className="n" style={{ color: "var(--accent)", fontWeight: 600 }}>{l.roi_pct.toFixed(0)}%</td>
+      <td className="n" style={{ color: "var(--good)", fontWeight: 700 }}>{l.roi_pct.toFixed(0)}%</td>
       <td className="tiny">
         {l.flags.map((f) => (
           <span key={f} className="pill WARN" style={{ marginRight: ".25rem", display: "inline-block", marginBottom: ".15rem" }}>

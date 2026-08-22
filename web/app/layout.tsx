@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Nav } from "@/components/Nav";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,15 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <nav className="top">
-          <div className="inner">
-            <span className="brand">Sourcing Engine</span>
-            <a href="/">Dashboard</a>
-            <a href="/products">Products</a>
-            <a href="/leads">Leads</a>
-            <a href="/settings" style={{ marginLeft: "auto" }}>Settings</a>
-          </div>
-        </nav>
+        <Nav />
         <div className="shell">{children}</div>
       </body>
     </html>
