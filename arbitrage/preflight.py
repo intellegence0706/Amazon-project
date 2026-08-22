@@ -29,37 +29,44 @@ def run():
         add("DATABASE_URL", FAIL, "set, but not a Postgres URL",
             "It must begin with postgresql:// — copy it from Supabase.")
         return out
-    # Pasting the example verbatim is the single most common setup mistake.
-    PLACEHOLDERS = ("YOUR_REAL_PASSWORD", "YOUR-PASSWORD", "[YOUR-PASSWORD]",
-                    "YOURPASSWORD", "PASSWORD", "your_password", "<password>",
-                    "REALPW", "REAL_PW", "REALPASSWORD", "PasteYourRealPassword",
-                    "yourpassword", "changeme", "xxx", "XXX")
-    # rsplit, not split: the host cannot contain '@' but the password can, and
-    # splitting on the first one mis-parses exactly the passwords we want to catch.
+    # rsplit, not split: a host can never contain '@' but a password can, and
+    # splitting on the first one mis-parses exactly the passwords worth catching.
     userinfo = url.rsplit("@", 1)[0]
-    if any(ph in userinfo for ph in PLACEHOLDERS):
-        add("DATABASE_URL", FAIL, "password is still the example placeholder",
-            "Replace it with your real Supabase database password. "
-            "Forgot it? Supabase → Settings → Database → Reset database password.")
-        return out
-    if "[" in userinfo or "]" in userinfo:
-        add("DATABASE_URL", FAIL, "square brackets left in the string",
-            "Remove the [ ] around the password — they are placeholder markers, "
-            "not part of the value.")
+    after_scheme = userinfo.split("://", 1)[-1]
+    pw = after_scheme.split(":", 1)[1] if ":" in after_scheme else ""
+
+    # Template text pasted verbatim is the most common setup mistake. Match
+    # markers rather than loose substrings, so a real password containing
+    # something like "xxx" is never wrongly flagged.
+    EXACT = {"password", "yourpassword", "your_password", "your-password",
+             "realpw", "realpassword", "changeme", "secret", "xxx", "test"}
+    MARKERS = ("your", "here", "placeholder", "replace", "paste", "put_",
+               "example", "<", ">", "[", "]")
+
+    if not pw:
+        add("DATABASE_URL", FAIL, "no password in the connection string",
+            "The format is postgresql://USER:PASSWORD@HOST:6543/postgres")
         return out
 
-    # Characters that must be percent-encoded inside a connection string.
-    # An unencoded one silently truncates the password, which reads as a
-    # rejected credential rather than a malformed URL.
-    pw = userinfo.split("://", 1)[-1].split(":", 1)[-1] if ":" in userinfo.split("://", 1)[-1] else ""
+    if pw.lower() in EXACT or any(m in pw.lower() for m in MARKERS):
+        add("DATABASE_URL", FAIL,
+            "the password looks like template text, not a real password",
+            "The part between ':' and '@' must be YOUR OWN Supabase database "
+            "password — not any of the example words from the instructions. "
+            "Set one in Supabase → Settings → Database → Reset database "
+            "password, using only letters and numbers.")
+        return out
+
+    # These characters silently truncate the URL, which surfaces as a rejected
+    # credential rather than a malformed address.
     risky = [c for c in "@:/?#[]" if c in pw]
     if risky:
         enc = {"@": "%40", ":": "%3A", "/": "%2F", "?": "%3F",
                "#": "%23", "[": "%5B", "]": "%5D"}
         add("Password characters", FAIL,
             f"password contains {' '.join(risky)} — these break the URL",
-            "Either reset the password to letters and numbers only, or encode "
-            "them: " + ", ".join(f"{c} → {enc[c]}" for c in risky))
+            "Reset the password to letters and numbers only, or encode them: "
+            + ", ".join(f"{c} → {enc[c]}" for c in risky))
         return out
 
     add("DATABASE_URL", PASS, f"…@{url.rsplit('@', 1)[-1][:46]}")
